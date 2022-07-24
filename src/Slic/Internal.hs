@@ -2,13 +2,14 @@
 
 module Slic.Internal where
 
-import           Color.Space
 import           Data.Massiv.Array
+import           Graphics.Pixel.ColorSpace
+import qualified Image                     as I
 
 data Params =
   Params
 
--- 1. Preprocessing 
+-- 1. Preprocessing
 -- 2. Cluster centers
 -- 3. Optimize the initial cluster center
 -- 4. Calculate the distance between the pixel and the cluster center
@@ -30,3 +31,10 @@ clusterCenters superpixels image = centers
         Par
         (Sz (ch :> superpixels :. superpixels))
         (\(i :> j :. k) -> image !> i !> (j * wStep) ! (k * hStep))
+
+sobelOperator :: ColorModel cs e => I.Image cs e -> I.Image cs e
+sobelOperator (I.Image array) =
+  I.Image $
+  compute $ mapStencil Edge (makeCorrelationStencilFromKernel kernel) array
+  where
+    (I.Image kernel) = I.fromLists [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]

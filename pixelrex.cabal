@@ -25,7 +25,9 @@ source-repository head
 
 library
   exposed-modules:
-      Lib
+      Color.Space
+      Slic
+      Slic.Internal
   other-modules:
       Paths_pixelrex
   hs-source-dirs:
@@ -33,6 +35,8 @@ library
   build-depends:
       base >=4.7 && <5
     , massiv ==1.0.1.1
+    , Color ==0.3.3
+    , massiv-io ==1.0.0.1
   default-language: Haskell2010
 
 executable pixelrex-exe

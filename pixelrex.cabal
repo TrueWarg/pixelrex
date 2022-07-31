@@ -25,11 +25,9 @@ source-repository head
 
 library
   exposed-modules:
-      Color.Space
+      Image
       Slic
       Slic.Internal
-  other-modules:
-      Paths_pixelrex
   hs-source-dirs:
       src
   build-depends:
@@ -41,8 +39,6 @@ library
 
 executable pixelrex-exe
   main-is: Main.hs
-  other-modules:
-      Paths_pixelrex
   hs-source-dirs:
       app
   ghc-options: -threaded -rtsopts -with-rtsopts=-N

@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns         #-}
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
@@ -6,56 +7,62 @@
 
 module Slic.Internal where
 
+import           Control.Monad
+import           Control.Monad.ST          (ST, runST)
+import qualified Data.HashTable.Class      as H
+import           Data.HashTable.ST.Basic   (HashTable)
+import qualified Data.HashTable.ST.Basic   as HB
+import           Data.Int                  (Int8)
 import           Data.Massiv.Array
 import           Data.Massiv.Array         as A
 import           Data.Massiv.Array.IO      (Image, convertImage)
+import           Data.STRef
 import           Debug.Trace               (trace)
 import           Graphics.Pixel.ColorSpace
 import qualified Image                     as I
 
 data Params =
   Params
-    { superpixels :: Int
-    , iterations  :: Int
+    { superpixels    :: !Int
+    , stride         :: !Int
+    , iterations     :: !Int
+    , distanceWeight :: !Float
     }
 
 type Point2D = (Int, Int)
 
 type PixelPoint cs e = (Pixel cs e, Point2D)
 
--- 1. Preprocessing
--- 2. Cluster centers
--- 3. Optimize the initial cluster center
--- 4. Calculate the distance between the pixel and the cluster center
--- 5. Classify pixels
--- 6. Recalculate cluster centers
--- 7. Interate 4 - 6
 process ::
      (Integral e, Storable e, Elevator e)
   => Params
   -> Image S (SRGB 'NonLinear) e
   -> Image S (LAB D65) Float
-process (Params superpixels iterations) image =
-  process' iterations 0 initialClusters
+process (Params superpixels stride iterations weight) image =
+  process' iterations 1 initialClusters
   where
     mapped = (convertImage image) :: (Image D (LAB D65) Float)
     labImage = computeAs S $ mapped
-    grads = sobelOperator $ computeAs S $ labImage
-    Sz (w :. h) = size grads
-    imagePixels = fromIntegral $ w * h
+    Sz (h :. w) = size image
+    imagePixels = fromIntegral $ h * w
     length = floor $ sqrt $ imagePixels / (fromIntegral $ superpixels)
-    initialClusters = initialCenters length labImage grads
+    initialClusters = initialCenters length labImage
     process' iterations step clusters =
-      let mask = trace "!!! mask" assignClusters length labImage clusters
-          newClusters = trace ("!!! newClusters" ++ show step) recalculateCenters labImage clusters mask
-       in if (step == iterations) {- then error $ "!!! " ++ (show $ size initialClusters) ++ " " ++ show length ++ " " ++ show w  -}
+      let mask =
+            assignClusters
+              (length * length)
+              labImage
+              clusters
+              (slicDistance weight)
+          newClusters = recalculateCenters labImage mask
+       in if (step == iterations)
             then makeArrayR
                    S
                    Par
                    (size mask)
                    (\(i :. j) ->
-                      let (pixel, _) = mask !> i ! j
-                       in pixel)
+                      let (y, x) = mask !> i ! j
+                       in labImage !> x ! y)
             else process' iterations (step + 1) newClusters
 
 sobelOperator :: ColorModel cs e => Image S cs e -> Image S cs e
@@ -64,135 +71,128 @@ sobelOperator array =
   where
     kernel = I.fromLists [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]
 
+localMinByGrad ::
+     (ColorModel cs e, Euclidean (Pixel cs e))
+  => Image S cs e
+  -> Point2D
+  -> Point2D
+localMinByGrad image center = runST $ localMinByGrad' image center
+  where
+    localMinByGrad' !image !(y, x) = do
+      minRef <- newSTRef (fromIntegral (maxBound :: Int))
+      pointRef <- newSTRef center
+      let Sz (h :. w) = size image
+          execute =
+            loopM_ (y - 1) (\i -> i <= y + 1 && i >= 0 && i < h) (+ 1) $ \i -> do
+              loopM_ (x - 1) (\j -> j <= x + 1 && j >= 0 && j < w) (+ 1) $ \j -> do
+                let left = image !> i ! (max 0 (j - 1))
+                    right = image !> i ! (min w (j + 1))
+                    top = image !> (min h (i + 1)) ! j
+                    bottom = image !> (max 0 (i - 1)) ! j
+                    gx = distance left right
+                    gy = distance top bottom
+                    gradient = (gx ^ 2) + (gy ^ 2)
+                min <- readSTRef minRef
+                if (gradient < min)
+                  then writeSTRef minRef min *> writeSTRef pointRef (i, j)
+                  else pure ()
+      readSTRef pointRef
+
 initialCenters ::
-     (ColorModel cs e, Ord (Color cs e))
+     (ColorModel cs e, Euclidean (Pixel cs e))
   => Int
   -> Image S cs e
-  -> Image S cs e
   -> Array U Ix1 (PixelPoint cs e)
-initialCenters length original grads = centers
+initialCenters step image = centers
   where
-    Sz (w :. h) = size grads
-    gridw = (w `div` length) - 1
-    gridh = (h `div` length) - 1
-    idxElem i j =
-      let i' = max i 0
-          j' = max j 0
-       in ((i', j'), original !> i' ! j', grads !> i' ! j')
+    Sz (h :. w) = size image
+    gridh = (h `div` step) - 1
+    gridw = (w `div` step) - 1
     centers =
       makeArrayR
         U
         Par
-        (Sz $ gridw * gridh)
-        -- todo: make more general and efficient min index finding (try to find it in 'massive')
+        (Sz $ gridh * gridw)
         (\k ->
            let i = k `div` (gridh - 1)
                j = k `mod` gridw
-               cx = i * length
-               cy = j * length
-               flatWindow =
-                 [ idxElem (cx - 1) (cy + 1)
-                 , idxElem cx (cy + 1)
-                 , idxElem (cx + 1) (cy + 1)
-                 , idxElem (cx - 1) cy
-                 , idxElem cx cy
-                 , idxElem (cx + 1) cy
-                 , idxElem (cx - 1) (cy - 1)
-                 , idxElem cx (cy - 1)
-                 , idxElem (cx + 1) (cy - 1)
-                 ]
-               localMinIdx =
-                 indexOfMin $ fmap (\(_, _, grad) -> grad) flatWindow
-               (coords, pixel, _) = flatWindow !! localMinIdx
-            in (pixel, coords))
-
-indexOfMin :: (Eq a, Ord a) => [a] -> Int
-indexOfMin [] = error "List is empty"
-indexOfMin (a:as) = indexOfMin' 0 a 1 as
-  where
-    indexOfMin' minIdx _ _ [] = minIdx
-    indexOfMin' minIdx min idx (x:xs) =
-      indexOfMin' newMinIdx newMin (idx + 1) xs
-      where
-        (newMinIdx, newMin) =
-          if (x < min)
-            then (idx, x)
-            else (minIdx, min)
-
-indexOfMinA :: (Eq a, Ord a, Storable a) => Array S Ix1 a -> Int
-indexOfMinA arr
-  | size arr == 0 = error "Array is empty"
-  | otherwise = indexOfMinA' 0 (arr ! 0) 1 arr
-  where
-    indexOfMinA' minIdx min idx arr
-      | size arr == (Sz idx) = minIdx
-      | otherwise = indexOfMinA' newMinIdx newMin (idx + 1) arr
-      where
-        x = arr ! idx
-        (newMinIdx, newMin) =
-          if (x < min)
-            then (idx, x)
-            else (minIdx, min)
+               cy = min (h - 1) (i * step)
+               cx = min (w - 1) (j * step)
+               coords@(cy', cx') = localMinByGrad image (cy, cx)
+            in (image !> cy' ! cx', coords))
 
 assignClusters ::
      (ColorModel cs e, Euclidean (Pixel cs e))
   => Int
   -> Image S cs e
   -> Array U Ix1 (PixelPoint cs e)
-  -> Array U Ix2 (PixelPoint cs e)
-assignClusters length image clusters = mask
+  -> (PixelPoint cs e -> PixelPoint cs e -> Float)
+  -> Array U Ix2 Point2D
+assignClusters neighborhood image clusters distanceFunc = runST $ result
   where
-    neighborhood = fromIntegral $ length * length
-    -- todo: now we have ~ O(w*h*k), where w and h - image size, k - cluster numbers.
-    -- make more efficient impl with ~ O(k*2*S)
-    -- (need PrimMonad for local mutablity or try to impl some inmutable version:
-    -- store information between distance of clusters)
-    mask =
-      makeArrayR
-        U
-        Par
-        (size image)
-        (\(i :. j) ->
-           let nearest =
-                 computeAs U $
-                 sfilter
-                   (\(_, center) -> distance (i, j) center <= neighborhood)
-                   clusters
-               pixelPoint = (image !> i ! j, (i, j))
-               distances =
-                 computeAs S $
-                 A.map
-                   (\cluster -> slicDistance 0.5 pixelPoint cluster :: Float)
-                   nearest
-               index = indexOfMinA distances
-               cluster = (computeAs U nearest) ! index
-            in cluster)
+    imageSize@(Sz (h :. w)) = size image
+    result = do
+      mask <- newMArray imageSize (0, 0)
+      distances <-
+        newMArray imageSize (fromIntegral (maxBound :: Int)) :: ST s (A.MArray (A.PrimState (ST s)) S Ix2 Float)
+      let Sz clusterSize = size clusters
+          execute =
+            loopM_ 0 (< clusterSize) (+ 1) $ \k -> do
+              let cluster@(clusterPixel, (y, x)) = clusters ! k
+                  startY = max 0 (y - neighborhood)
+                  endY = min h (y + neighborhood)
+                  startX = max 0 (x - neighborhood)
+                  endX = min w (x + neighborhood)
+              loopM_ startY (< endY) (+ 1) $ \i -> do
+                loopM_ startX (< endX) (+ 1) $ \j -> do
+                  let imagePixel = image !> i ! j
+                      distance = distanceFunc cluster (imagePixel, (i, j))
+                  currentDistance <- A.readM distances (i :. j)
+                  if (distance < currentDistance)
+                    then write_ distances (i :. j) distance *>
+                         write_ mask (i :. j) (y, x)
+                    else pure ()
+      execute
+      freezeS mask
 
 recalculateCenters ::
      ColorModel cs e
   => Image S cs e
+  -> Array U Ix2 Point2D
   -> Array U Ix1 (PixelPoint cs e)
-  -> Array U Ix2 (PixelPoint cs e)
-  -> Array U Ix1 (PixelPoint cs e)
-recalculateCenters image old mask = new
+recalculateCenters image mask = runST $ result
   where
-    newCoords cluster =
-      let slice = sfilter (\pixelPoint -> pixelPoint == cluster) mask
-          (x, y) =
-            foldr
-              (\(_, (i, j)) (accI, accJ) ->
-                 (accI + fromIntegral i, accJ + fromIntegral j))
-              (0, 0)
-              slice
-          (Sz sz) = size $ computeAs U $ slice
-       in (floor $ x / fromIntegral sz, floor $ y / fromIntegral sz)
-    new =
-      computeAs U $
-      smap
-        (\cluster ->
-           let (x, y) = newCoords cluster
-            in (image !> x ! y, (x, y)))
-        old
+    Sz (h :. w) = size mask
+    result = do
+      let calculateCoordSums = do
+            coordSums <- H.new :: ST s (HashTable s Point2D (Int, Int, Int))
+            loopM_ 0 (< h) (+ 1) $ \i -> do
+              loopM_ 0 (< w) (+ 1) $ \j -> do
+                let coord = mask !> i ! j
+                item <- H.lookup coordSums coord
+                case item of
+                  Just (accY, accX, count) ->
+                    H.insert coordSums coord (accY + i, accX + j, count + 1)
+                  Nothing -> H.insert coordSums coord (i, j, 1)
+            pure coordSums
+          calculateClusters sums = do
+            size <- HB.size sums
+            clusters <- newMArray (Sz size) ((image !> 0 ! 0), (mask !> 0 ! 0))
+            loopM_ 0 (< size) (+ 1) $ \k -> do
+              item <- H.nextByIndex sums (fromIntegral k)
+              case item of
+                Just (_, _, (accY, accX, count)) ->
+                  let n = fromIntegral count
+                      fracAccY = fromIntegral accY
+                      fracAccX = fromIntegral accX
+                      coord@(y, x) =
+                        (floor $ fracAccY / n, floor $ fracAccX / n)
+                   in write_ clusters k (image !> y ! x, coord)
+                Nothing -> error $ "coords must contain element by " ++ show k
+            pure $ clusters
+      sums <- calculateCoordSums
+      clusters <- calculateClusters sums
+      freezeS $ clusters
 
 slicDistance ::
      (ColorModel cs e, Euclidean (Pixel cs e))

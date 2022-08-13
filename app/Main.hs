@@ -3,16 +3,39 @@
 
 module Main where
 
-import           Data.Massiv.Array
 import           Data.Massiv.Array.IO as A
-import           Slic.Internal
+import           Pixelrex
+import qualified Pixelrex             as R
 
 main :: IO ()
 main = do
   image <-
     (A.readImageAuto "C:\\Users\\irrmm\\Desktop\\sample.png") :: IO (A.Image S (SRGB 'NonLinear) Word8)
-  let result = process (Params 2500 10 5 20) image
+  let labImage =
+        (computeAs S $ convertImage image) :: (A.Image S (LAB D65) Float)
+      result = process (Params 800 10 10 20) (convertToRexFormat labImage)
       resultPath = "C:\\Users\\irrmm\\Desktop\\result.png"
   putStrLn $ "written: " ++ resultPath
   writeImage resultPath image
-  displayImageUsing defaultViewer True . computeAs S =<< concatM 1 [result]
+  displayImageUsing defaultViewer True . computeAs S =<<
+    concatM 1 [convertToSealab result]
+
+convertToRexFormat :: (A.Image S (LAB D65) Float) -> R.Image Float
+convertToRexFormat image =
+  makeArrayR
+    U
+    Par
+    (size image)
+    (\(i :. j) ->
+       let (Pixel (ColorLAB l a b)) = image !> i ! j
+        in (l, a, b))
+
+convertToSealab :: R.Image Float -> (A.Image S (LAB D65) Float)
+convertToSealab image =
+  makeArrayR
+    S
+    Par
+    (size image)
+    (\(i :. j) ->
+       let (l, a, b) = image !> i ! j
+        in (Pixel (ColorLAB l a b)))

@@ -25,9 +25,11 @@ source-repository head
 
 library
   exposed-modules:
-      Image
-      Slic
-      Slic.Internal
+      Pixelrex
+      Pixelrex.Array
+      Pixelrex.Point
+      Pixelrex.Distance
+      Pixelrex.Slic
   hs-source-dirs:
       src
   ghc-options: -O3
@@ -35,7 +37,6 @@ library
       base >=4.7 && <5
     , massiv ==1.0.1.1
     , massiv-io ==1.0.0.1
-    , Color ==0.3.3
     , hashtables ==1.2.4.2
   default-language: Haskell2010
 
@@ -48,7 +49,7 @@ executable pixelrex-exe
       base >=4.7 && <5
     , text
     , massiv-io ==1.0.0.1
-    , massiv ==1.0.1.1
+    , Color ==0.3.3
     , pixelrex
   default-language: Haskell2010
 

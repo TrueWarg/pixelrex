@@ -17,6 +17,8 @@ import           Data.STRef
 import           Debug.Trace               (trace)
 import           Graphics.Pixel.ColorSpace
 import qualified Image                     as I
+import qualified Data.HashTable.ST.Basic as H
+import           Data.HashTable.ST.Linear (HashTable)
 
 data Params =
   Params
@@ -62,6 +64,41 @@ process (Params superpixels stride iterations weight) image =
                        in pixel)
             else process' iterations (step + 1) clusters
 
+
+pickPixels :: ColorModel cs e => Array U Ix2 (PixelPoint cs e) -> Int -> Image S cs e
+pickPixels mask stride = runST $ result
+  where
+    maskSize@(Sz h :. w) = size mask
+    writeInBlock arr value (start, end) = do
+      let
+        (startY, startX) = start
+        (endY, endX) = end
+      loopM_ startY (< endY) (+ 1) $ \i -> do
+        loopM_ startX (< endX) (+ 1) $ \j -> do
+          write_ arr value
+    mostSpread mask (start, end) = do
+      let
+        (startY, startX) = start
+        (endY, endX) = end
+        (_, initialCoord) = mask !> 0 ! 0
+      max <- newSTRef (minBound :: Int)
+      spread <- newSTRef initialCoord 
+      counts <- H.new :: ST s (HashTable s Point2D Int)
+      loopM_ startY (< endY) (+ 1) $ \i -> do
+        loopM_ startX (< endX) (+ 1) $ \j -> do
+          let
+            (_, coord) = mask !> i ! j
+          value <- H.lookup counts coord
+          case value of
+            Just count -> H.insert counts coord (count + 1)
+            Nothing -> H.insert counts coord 1
+      
+    result = do
+      let
+        picked mask stride = do
+          arr <- newMArray maskSize (maskSize !> 0 ! 0)
+          loopM_ 0 (< h) (+ 1) $ \i -> do
+            loopM_ 0 (< w) (+ 1) $ \j -> do
 
 sobelOperator :: ColorModel cs e => Image S cs e -> Image S cs e
 sobelOperator array =
@@ -130,7 +167,7 @@ assignClusters neighborhood image clusters distanceFunc = runST $ result
   where
     imageSize@(Sz (h :. w)) = size image
     result = do
-      mask <- newMArray imageSize (clusters ! 5)
+      mask <- newMArray imageSize (clusters ! 0)
       distances <-
         newMArray imageSize (fromIntegral (maxBound :: Int)) :: ST s (A.MArray (A.PrimState (ST s)) S Ix2 Float)
       let Sz clusterSize = size clusters

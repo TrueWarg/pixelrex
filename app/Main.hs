@@ -11,7 +11,7 @@ main :: IO ()
 main = do
   image <-
     (A.readImageAuto "C:\\Users\\irrmm\\Desktop\\sample.png") :: IO (A.Image S (SRGB 'NonLinear) Word8)
-  let result = process (Params 40 10 10 0.1) image
+  let result = process (Params 80 10 5 20) image
       resultPath = "C:\\Users\\irrmm\\Desktop\\result.png"
   putStrLn $ "written: " ++ resultPath
   writeImage resultPath image

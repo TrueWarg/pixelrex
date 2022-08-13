@@ -9,9 +9,6 @@ module Slic.Internal where
 
 import           Control.Monad
 import           Control.Monad.ST          (ST, runST)
-import qualified Data.HashTable.Class      as H
-import           Data.HashTable.ST.Basic   (HashTable)
-import qualified Data.HashTable.ST.Basic   as HB
 import           Data.Int                  (Int8)
 import           Data.Massiv.Array
 import           Data.Massiv.Array         as A
@@ -50,20 +47,21 @@ process (Params superpixels stride iterations weight) image =
     process' iterations step clusters =
       let mask =
             assignClusters
-              (length * length)
+              (3 * length)
               labImage
               clusters
-              (slicDistance weight)
-          newClusters = recalculateCenters labImage mask
+              (slicDistance (weight / fromIntegral length))
+          newClusters = recalculateCenters labImage clusters mask
        in if (step == iterations)
             then makeArrayR
                    S
                    Par
                    (size mask)
                    (\(i :. j) ->
-                      let (y, x) = mask !> i ! j
-                       in labImage !> x ! y)
-            else process' iterations (step + 1) newClusters
+                      let (pixel, _) = mask !> i ! j
+                       in pixel)
+            else process' iterations (step + 1) clusters
+
 
 sobelOperator :: ColorModel cs e => Image S cs e -> Image S cs e
 sobelOperator array =
@@ -127,12 +125,12 @@ assignClusters ::
   -> Image S cs e
   -> Array U Ix1 (PixelPoint cs e)
   -> (PixelPoint cs e -> PixelPoint cs e -> Float)
-  -> Array U Ix2 Point2D
+  -> Array U Ix2 (PixelPoint cs e)
 assignClusters neighborhood image clusters distanceFunc = runST $ result
   where
     imageSize@(Sz (h :. w)) = size image
     result = do
-      mask <- newMArray imageSize (0, 0)
+      mask <- newMArray imageSize (clusters ! 5)
       distances <-
         newMArray imageSize (fromIntegral (maxBound :: Int)) :: ST s (A.MArray (A.PrimState (ST s)) S Ix2 Float)
       let Sz clusterSize = size clusters
@@ -150,49 +148,34 @@ assignClusters neighborhood image clusters distanceFunc = runST $ result
                   currentDistance <- A.readM distances (i :. j)
                   if (distance < currentDistance)
                     then write_ distances (i :. j) distance *>
-                         write_ mask (i :. j) (y, x)
+                         write_ mask (i :. j) cluster
                     else pure ()
       execute
       freezeS mask
 
 recalculateCenters ::
-     ColorModel cs e
+     (ColorModel cs e, Fractional e)
   => Image S cs e
-  -> Array U Ix2 Point2D
   -> Array U Ix1 (PixelPoint cs e)
-recalculateCenters image mask = runST $ result
+  -> Array U Ix2 (PixelPoint cs e)
+  -> Array U Ix1 (PixelPoint cs e)
+recalculateCenters image old mask = new
   where
-    Sz (h :. w) = size mask
-    result = do
-      let calculateCoordSums = do
-            coordSums <- H.new :: ST s (HashTable s Point2D (Int, Int, Int))
-            loopM_ 0 (< h) (+ 1) $ \i -> do
-              loopM_ 0 (< w) (+ 1) $ \j -> do
-                let coord = mask !> i ! j
-                item <- H.lookup coordSums coord
-                case item of
-                  Just (accY, accX, count) ->
-                    H.insert coordSums coord (accY + i, accX + j, count + 1)
-                  Nothing -> H.insert coordSums coord (i, j, 1)
-            pure coordSums
-          calculateClusters sums = do
-            size <- HB.size sums
-            clusters <- newMArray (Sz size) ((image !> 0 ! 0), (mask !> 0 ! 0))
-            loopM_ 0 (< size) (+ 1) $ \k -> do
-              item <- H.nextByIndex sums (fromIntegral k)
-              case item of
-                Just (_, _, (accY, accX, count)) ->
-                  let n = fromIntegral count
-                      fracAccY = fromIntegral accY
-                      fracAccX = fromIntegral accX
-                      coord@(y, x) =
-                        (floor $ fracAccY / n, floor $ fracAccX / n)
-                   in write_ clusters k (image !> y ! x, coord)
-                Nothing -> error $ "coords must contain element by " ++ show k
-            pure $ clusters
-      sums <- calculateCoordSums
-      clusters <- calculateClusters sums
-      freezeS $ clusters
+    newCoords cluster =
+      let (initialPixel, _) = cluster
+          slice = sfilter (\pixelPoint -> pixelPoint == cluster) mask
+          (pixel, y, x) =
+            foldr
+              (\(pixel, (i, j)) (accPixel, accI, accJ) ->
+                 ( accPixel + pixel
+                 , accI + fromIntegral i
+                 , accJ + fromIntegral j))
+              (initialPixel, 0, 0)
+              slice
+          (Sz sz) = size $ computeAs U $ slice
+       in ( pixel / fromIntegral sz
+          , (floor $ y / fromIntegral sz, floor $ x / fromIntegral sz))
+    new = computeAs U $ smap newCoords old
 
 slicDistance ::
      (ColorModel cs e, Euclidean (Pixel cs e))

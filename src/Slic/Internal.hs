@@ -17,7 +17,7 @@ import           Data.STRef
 import           Debug.Trace               (trace)
 import           Graphics.Pixel.ColorSpace
 import qualified Image                     as I
-import qualified Data.HashTable.ST.Basic as H
+import qualified Data.HashTable.Class as H
 import           Data.HashTable.ST.Linear (HashTable)
 
 data Params =
@@ -64,41 +64,17 @@ process (Params superpixels stride iterations weight) image =
                        in pixel)
             else process' iterations (step + 1) clusters
 
-
-pickPixels :: ColorModel cs e => Array U Ix2 (PixelPoint cs e) -> Int -> Image S cs e
-pickPixels mask stride = runST $ result
+-- todo remove this draft
+maxCoord :: [(Point2D, Int)] -> Point2D
+maxCoord [] = error "list is empty"
+maxCoord !(!(point, count) : xs) = maxCoord' point count xs
   where
-    maskSize@(Sz h :. w) = size mask
-    writeInBlock arr value (start, end) = do
-      let
-        (startY, startX) = start
-        (endY, endX) = end
-      loopM_ startY (< endY) (+ 1) $ \i -> do
-        loopM_ startX (< endX) (+ 1) $ \j -> do
-          write_ arr value
-    mostSpread mask (start, end) = do
-      let
-        (startY, startX) = start
-        (endY, endX) = end
-        (_, initialCoord) = mask !> 0 ! 0
-      max <- newSTRef (minBound :: Int)
-      spread <- newSTRef initialCoord 
-      counts <- H.new :: ST s (HashTable s Point2D Int)
-      loopM_ startY (< endY) (+ 1) $ \i -> do
-        loopM_ startX (< endX) (+ 1) $ \j -> do
-          let
-            (_, coord) = mask !> i ! j
-          value <- H.lookup counts coord
-          case value of
-            Just count -> H.insert counts coord (count + 1)
-            Nothing -> H.insert counts coord 1
-      
-    result = do
-      let
-        picked mask stride = do
-          arr <- newMArray maskSize (maskSize !> 0 ! 0)
-          loopM_ 0 (< h) (+ 1) $ \i -> do
-            loopM_ 0 (< w) (+ 1) $ \j -> do
+    maxCoord' !coord _ [] = coord
+    maxCoord' !currCoord !max !(!(coord, count) : xs) = maxCoord' newCoord newMax xs
+      where
+        (newCoord, newMax) = if (count > max) then (coord, count) else (currCoord, max)
+{-# INLINE maxCoord #-}
+
 
 sobelOperator :: ColorModel cs e => Image S cs e -> Image S cs e
 sobelOperator array =

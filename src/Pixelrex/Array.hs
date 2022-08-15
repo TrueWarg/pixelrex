@@ -28,7 +28,7 @@ writeToBlock_ ::
 writeToBlock_ !arr !(topLeft, bottonRight) value = do
   let (Sz (h :. w)) = sizeOfMArray arr
       (startY, startX) = topLeft
-      (endY, endX) = topLeft
+      (endY, endX) = bottonRight
       (safeStartY, safeStartX) = (max 0 startY, max 0 startX)
       (safeEndY, safeEndX) = (min h endY, min w endX)
   loopM_ safeStartY (< safeEndY) (+ 1) $ \i -> do

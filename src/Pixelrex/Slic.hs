@@ -17,6 +17,7 @@ import           Debug.Trace              (trace)
 import           Pixelrex.Array           (Ix2 (..), Matrix, Sz (..), loopM_,
                                            (!), (!>))
 
+import           Data.Hashable
 import qualified Pixelrex.Array           as A
 import           Pixelrex.Distance
 import           Pixelrex.Point
@@ -66,14 +67,30 @@ process (Params superpixels stride iterations weight) image =
               (slicDistance (weight / fromIntegral length))
           newClusters = recalculateCenters image clusters mask
        in if (step == iterations)
-            then A.makeArrayR
-                   A.U
-                   A.Par
-                   (A.size mask)
-                   (\(i :. j) ->
-                      let (pixel, _) = mask !> i ! j
-                       in pixel)
+            then let updatedMask = spreadPoolAndUpsample mask stride
+                  in A.makeArrayR
+                       A.U
+                       A.Par
+                       (A.size updatedMask)
+                       (\(i :. j) ->
+                          let (pixel, _) = updatedMask !> i ! j
+                           in pixel)
             else process' iterations (step + 1) clusters
+
+spreadPoolAndUpsample ::
+     (Hashable a, A.Unbox a, Show a) => ClustersMask a -> Int -> ClustersMask a
+spreadPoolAndUpsample mask stride =
+  runST $ do
+    let maskSize@(Sz (maskH :. maskW)) = A.size mask
+    newMask <- A.newMArray maskSize (mask !> 0 ! 0)
+    loopM_ stride (< maskH) (+ stride) $ \i -> do
+      loopM_ stride (< maskW) (+ stride) $ \j -> do
+        let h = min stride (maskH - i)
+            w = min stride (maskW - j)
+            slice = A.computeAs A.U $ A.flatten $ A.extract' (i :. j) (Sz $ h :. w) mask
+            pixel = A.mostSpread slice
+        A.writeToBlock_ newMask ((i, j), (i + h, j + w)) pixel
+    A.freezeS newMask
 
 localMinByGrad ::
      (A.Unbox a, Euclidean (Point3D a)) => Image a -> Coord2D -> Coord2D
@@ -97,6 +114,7 @@ localMinByGrad image center = runST $ localMinByGrad' image center
                 if (gradient < min)
                   then writeSTRef minRef min *> writeSTRef pointRef (i, j)
                   else pure ()
+      -- execute
       readSTRef pointRef
 
 initialCenters ::

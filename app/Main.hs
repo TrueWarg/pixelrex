@@ -10,10 +10,10 @@ import qualified Pixelrex             as R
 main :: IO ()
 main = do
   image <-
-    (A.readImageAuto "sample.jpg") :: IO (A.Image S (SRGB 'NonLinear) Word8)
+    (A.readImageAuto "sample.png") :: IO (A.Image S (SRGB 'NonLinear) Word8)
   let labImage =
         (computeAs S $ convertImage image) :: (A.Image S (LAB D65) Float)
-      result = process (Params 250 3 45 10) (convertToRexFormat labImage)
+      result = process (Params 2500 2 5 10) (convertToRexFormat labImage)
       resultPath = "result.png"
   putStrLn $ "written: " ++ resultPath
   writeImage resultPath image

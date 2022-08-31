@@ -51,21 +51,17 @@ instance Euclidean (Point3D Float) where
       result = sqrt $ ((x2 - x1) ^ 2) + ((y2 - y1) ^ 2) + ((z2 - z1) ^ 2)
 
 process :: Params -> Image Float -> Image Float
-process (Params superpixels stride iterations weight) image =
+process !(Params !superpixels !stride !iterations !weight) image =
   process' iterations 1 initialClusters
   where
     Sz (h :. w) = A.size image
     imagePixels = fromIntegral $ h * w
     length = floor $ sqrt $ imagePixels / (fromIntegral $ superpixels)
     initialClusters = initialCenters length image
-    process' iterations step clusters =
-      let mask =
-            assignClusters
-              (3 * length)
-              image
-              clusters
-              (slicDistance (weight / fromIntegral length))
-          newClusters = recalculateCenters image clusters mask
+    normalizedWeight = weight / fromIntegral length
+    process' !iterations !step !clusters =
+      let mask = assignClusters (3 * length) image clusters normalizedWeight
+          newClusters = recalculateClusterCenters clusters mask
        in if (step == iterations)
             then let updatedMask = spreadPoolAndUpsample mask stride
                   in A.makeArrayR
@@ -75,11 +71,11 @@ process (Params superpixels stride iterations weight) image =
                        (\(i :. j) ->
                           let (pixel, _) = updatedMask !> i ! j
                            in pixel)
-            else process' iterations (step + 1) clusters
+            else process' iterations (step + 1) newClusters
 
 spreadPoolAndUpsample ::
      (Hashable a, A.Unbox a, Show a) => ClustersMask a -> Int -> ClustersMask a
-spreadPoolAndUpsample mask stride =
+spreadPoolAndUpsample !mask !stride =
   runST $ do
     let maskSize@(Sz (maskH :. maskW)) = A.size mask
     newMask <- A.newMArray maskSize (mask !> 0 ! 0)
@@ -87,14 +83,16 @@ spreadPoolAndUpsample mask stride =
       loopM_ stride (< maskW) (+ stride) $ \j -> do
         let h = min stride (maskH - i)
             w = min stride (maskW - j)
-            slice = A.computeAs A.U $ A.flatten $ A.extract' (i :. j) (Sz $ h :. w) mask
+            slice =
+              A.computeAs A.U $
+              A.flatten $ A.extract' (i :. j) (Sz $ h :. w) mask
             pixel = A.mostSpread slice
         A.writeToBlock_ newMask ((i, j), (i + h, j + w)) pixel
     A.freezeS newMask
 
 localMinByGrad ::
      (A.Unbox a, Euclidean (Point3D a)) => Image a -> Coord2D -> Coord2D
-localMinByGrad image center = runST $ localMinByGrad' image center
+localMinByGrad !image !center = runST $ localMinByGrad' image center
   where
     localMinByGrad' !image !(y, x) = do
       minRef <- newSTRef (fromIntegral (maxBound :: Int))
@@ -119,7 +117,7 @@ localMinByGrad image center = runST $ localMinByGrad' image center
 
 initialCenters ::
      (A.Unbox a, Euclidean (Point3D a)) => Int -> Image a -> Clusters a
-initialCenters step image = centers
+initialCenters !step !image = centers
   where
     Sz (h :. w) = A.size image
     gridh = (h `div` step) - 1
@@ -142,9 +140,9 @@ assignClusters ::
   => Int
   -> Image a
   -> Clusters a
-  -> (SuperPixel a -> SuperPixel a -> Float)
+  -> Float
   -> ClustersMask a
-assignClusters neighborhood image clusters distanceFunc = runST $ result
+assignClusters !neighborhood !image !clusters !distWeight = runST $ result
   where
     imageSize@(Sz (h :. w)) = A.size image
     result = do
@@ -162,7 +160,8 @@ assignClusters neighborhood image clusters distanceFunc = runST $ result
               loopM_ startY (< endY) (+ 1) $ \i -> do
                 loopM_ startX (< endX) (+ 1) $ \j -> do
                   let imagePixel = image !> i ! j
-                      distance = distanceFunc cluster (imagePixel, (i, j))
+                      distance =
+                        slicDistance distWeight cluster (imagePixel, (i, j))
                   currentDistance <- A.readM distances (i :. j)
                   if (distance < currentDistance)
                     then A.write_ distances (i :. j) distance *>
@@ -171,30 +170,50 @@ assignClusters neighborhood image clusters distanceFunc = runST $ result
       execute
       A.freezeS mask
 
-recalculateCenters ::
-     (A.Unbox a, Eq a, Fractional a)
-  => Image a
-  -> Clusters a
+recalculateClusterCenters ::
+     (A.Unbox a, Eq a, RealFrac a, Hashable a)
+  => Clusters a
   -> ClustersMask a
   -> Clusters a
-recalculateCenters image old mask = new
+recalculateClusterCenters !old !mask = runST result
   where
-    newCoords cluster =
-      let (initialPixel, _) = cluster
-          slice = A.sfilter (\pixelPoint -> pixelPoint == cluster) mask
-          (pixel, y, x) =
-            foldr
-              (\(pixel, (i, j)) (accPixel, accI, accJ) ->
-                 ( accPixel + pixel
-                 , accI + fromIntegral i
-                 , accJ + fromIntegral j))
-              (initialPixel, 0, 0)
-              slice
-          (Sz sz) = A.size $ A.computeAs A.U $ slice
-          deriveElemenwise (a1, a2, a3) v = (a1 / v, a2 / v, a3 / v)
-       in ( deriveElemenwise pixel $ fromIntegral sz
-          , (floor $ y / fromIntegral sz, floor $ x / fromIntegral sz))
-    new = A.computeAs A.U $ A.smap newCoords old
+    Sz (clustersCount) = A.size old
+    Sz (h :. w) = A.size mask
+    deriveElemenwise (!a1, !a2, !a3) !v = (a1 / v, a2 / v, a3 / v)
+    result = do
+      let calculateCoordSums clustersCount = do
+            coordSums <- H.newSized clustersCount :: ST s (HashTable s k v)
+            loopM_ 0 (< h) (+ 1) $ \i -> do
+              loopM_ 0 (< w) (+ 1) $ \j -> do
+                let superpixel@(pixel, coord) = mask !> i ! j
+                item <- H.lookup coordSums coord
+                case item of
+                  Just (!accPixel, !accY, !accX, !count) ->
+                    H.insert
+                      coordSums
+                      coord
+                      (accPixel + pixel, accY + i, accX + j, count + 1)
+                  Nothing -> H.insert coordSums coord (pixel, i, j, 1)
+            pure coordSums
+          calculateClusters clustersCount sums = do
+            clusters <- A.newMArray (Sz clustersCount) ((0, 0, 0), (0, 0))
+            clusterIdxRef <- newSTRef 0
+            -- todo: it's better to use something like loop with indexing. Try impl
+            H.mapM_
+              (\(_, (!accPixel, !accY, !accX, !count)) -> do
+                 idx <- readSTRef clusterIdxRef
+                 let n = fromIntegral count
+                     fracAccY = fromIntegral accY
+                     fracAccX = fromIntegral accX
+                     pixel = deriveElemenwise accPixel n
+                     coord@(y, x) = (floor $ fracAccY / n, floor $ fracAccX / n)
+                  in A.write_ clusters idx (pixel, coord) *>
+                     writeSTRef clusterIdxRef (idx + 1))
+              sums
+            pure clusters
+      sums <- calculateCoordSums clustersCount
+      new <- calculateClusters clustersCount sums
+      A.freezeS new
 
 slicDistance ::
      Euclidean (Point3D a) => Float -> SuperPixel a -> SuperPixel a -> Float

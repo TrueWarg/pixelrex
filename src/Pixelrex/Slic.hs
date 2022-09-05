@@ -102,8 +102,8 @@ localMinByGrad !image !center = runST $ localMinByGrad' image center
             loopM_ (y - 1) (\i -> i <= y + 1 && i >= 0 && i < h) (+ 1) $ \i -> do
               loopM_ (x - 1) (\j -> j <= x + 1 && j >= 0 && j < w) (+ 1) $ \j -> do
                 let left = image !> i ! (max 0 (j - 1))
-                    right = image !> i ! (min w (j + 1))
-                    top = image !> (min h (i + 1)) ! j
+                    right = image !> i ! (min (w - 1) (j + 1))
+                    top = image !> (min (h - 1) (i + 1)) ! j
                     bottom = image !> (max 0 (i - 1)) ! j
                     gx = distance left right
                     gy = distance top bottom
@@ -112,7 +112,7 @@ localMinByGrad !image !center = runST $ localMinByGrad' image center
                 if (gradient < min)
                   then writeSTRef minRef min *> writeSTRef pointRef (i, j)
                   else pure ()
-      -- execute
+      execute
       readSTRef pointRef
 
 initialCenters ::

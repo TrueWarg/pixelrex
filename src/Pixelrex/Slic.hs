@@ -1,9 +1,14 @@
+-- Module with function for implimentation of SLIC (Simple Linear Iterative Clustering) algorithm.
+-- See details in https://www.iro.umontreal.ca/~mignotte/IFT6150/Articles/SLIC_Superpixels.pdf
+-- Radhakrishna Achanta, Appu Shaji, Kevin Smith, Aurelien Lucchi,
+-- Pascal Fua, and Sabine Susstrunk, SLIC Superpixels, EPFL Technical Report no. 149300, June 2010.
 {-# LANGUAGE BangPatterns         #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
+-------------------------------------------------------------------------------------------
 module Pixelrex.Slic where
 
 import           Control.Monad
@@ -22,12 +27,13 @@ import qualified Pixelrex.Array           as A
 import           Pixelrex.Distance
 import           Pixelrex.Point
 
+-------------------------------------------------------------------------------------------
 data Params =
   Params
-    { clusterLength  :: !Int
-    , stride         :: !Int
-    , iterations     :: !Int
-    , distanceWeight :: !Float
+    { clusterLength       :: !Int -- ^ length of each cluster, in other words count of pixel of square side
+    , stride              :: !Int -- ^ count of pixel/square side, which will be merged in square with same color (final pixelization)
+    , iterations          :: !Int -- ^ number of applications main steps
+    , spaceDistanceWeight :: !Float -- value in SLIC distance formula: SLICdistance = ColorDistance + (w / length) * SpaceDistance
     }
 
 type Coord2D = Point2D Int
@@ -40,6 +46,7 @@ type Clusters a = A.Array A.U A.Ix1 (SuperPixel a)
 
 type ClustersMask a = A.Array A.U A.Ix2 (SuperPixel a)
 
+-------------------------------------------------------------------------------------------
 instance Euclidean (Point2D Int) where
   distance (x1, y1) (x2, y2) = result
     where
@@ -50,8 +57,10 @@ instance Euclidean (Point3D Float) where
     where
       result = sqrt $ ((x2 - x1) ^ 2) + ((y2 - y1) ^ 2) + ((z2 - z1) ^ 2)
 
-process :: Params -> Image Float -> Image Float
-process !(Params !length !stride !iterations !weight) image =
+-------------------------------------------------------------------------------------------
+-- | Process main SLIC with defined params
+processSlic :: Params -> Image Float -> Image Float
+processSlic !(Params !length !stride !iterations !weight) image =
   process' iterations 1 initialClusters
   where
     Sz (h :. w) = A.size image
@@ -61,7 +70,7 @@ process !(Params !length !stride !iterations !weight) image =
       let mask = assignClusters (3 * length) image clusters normalizedWeight
           newClusters = recalculateClusterCenters clusters mask
        in if (step == iterations)
-            then let updatedMask = spreadPoolAndUpsample mask stride
+            then let updatedMask = keepSpreadIn mask stride
                   in A.makeArrayR
                        A.U
                        A.Par
@@ -71,9 +80,16 @@ process !(Params !length !stride !iterations !weight) image =
                            in pixel)
             else process' iterations (step + 1) newClusters
 
-spreadPoolAndUpsample ::
+-------------------------------------------------------------------------------------------
+-- | Take most spread pixel in square and replace with it other pixels in this square
+-- | 0 1 | 0 0 |        | 2 2 | 0 0 |
+-- | 2 2 | 0 1 |        | 2 2 | 0 0 |
+-- |-----|-----|  ----> |-----|-----|
+-- | 3 3 | 3 3 |        | 3 3 | 3 3 |
+-- | 1 2 | 2 1 |        | 3 3 | 3 3 |
+keepSpreadIn ::
      (Hashable a, A.Unbox a, Show a) => ClustersMask a -> Int -> ClustersMask a
-spreadPoolAndUpsample !mask !stride =
+keepSpreadIn !mask !stride =
   runST $ do
     let maskSize@(Sz (maskH :. maskW)) = A.size mask
     newMask <- A.newMArray maskSize (mask !> 0 ! 0)
@@ -88,9 +104,11 @@ spreadPoolAndUpsample !mask !stride =
         A.writeToBlock_ newMask ((i, j), (i + h, j + w)) pixel
     A.freezeS newMask
 
-localMinByGrad ::
+-------------------------------------------------------------------------------------------
+-- | Find coordinate of min image gradient in square 3x3 with defined center
+coordinateOfMinGrad ::
      (A.Unbox a, Euclidean (Point3D a)) => Image a -> Coord2D -> Coord2D
-localMinByGrad !image !center = runST $ localMinByGrad' image center
+coordinateOfMinGrad !image !center = runST $ localMinByGrad' image center
   where
     localMinByGrad' !image !(y, x) = do
       minRef <- newSTRef (fromIntegral (maxBound :: Int))
@@ -113,6 +131,9 @@ localMinByGrad !image !center = runST $ localMinByGrad' image center
       execute
       readSTRef pointRef
 
+-------------------------------------------------------------------------------------------
+-- | Generate initial centers, which will be represented
+-- by a non-uniform grid corrected with 'coordinateOfMinGrad'
 initialCenters ::
      (A.Unbox a, Euclidean (Point3D a)) => Int -> Image a -> Clusters a
 initialCenters !step !image = centers
@@ -130,9 +151,12 @@ initialCenters !step !image = centers
                j = k `mod` gridw
                cy = min (h - 1) (i * step)
                cx = min (w - 1) (j * step)
-               coords@(cy', cx') = localMinByGrad image (cy, cx)
+               coords@(cy', cx') = coordinateOfMinGrad image (cy, cx)
             in (image !> cy' ! cx', coords))
 
+-------------------------------------------------------------------------------------------
+-- | In defined neighborhood for each pixel find slic disntance beetween the nearest
+-- by coordinate clusters and assign cluster with minimu distance for this pixel
 assignClusters ::
      (A.Unbox a, Euclidean (Point3D a))
   => Int
@@ -168,6 +192,9 @@ assignClusters !neighborhood !image !clusters !distWeight = runST $ result
       execute
       A.freezeS mask
 
+-------------------------------------------------------------------------------------------
+-- | For each cluster in superpixels mask find average of cordinates and colors,
+--   next define new cluster with these averages.
 recalculateClusterCenters ::
      (A.Unbox a, Eq a, RealFrac a, Hashable a)
   => Clusters a
@@ -213,6 +240,8 @@ recalculateClusterCenters !old !mask = runST result
       new <- calculateClusters clustersCount sums
       A.freezeS new
 
+-------------------------------------------------------------------------------------------
+-- | SLICDistance = ColorDistance + Weight * SpaceDistance
 slicDistance ::
      Euclidean (Point3D a) => Float -> SuperPixel a -> SuperPixel a -> Float
 slicDistance weight (pixel1, coord1) (pixel2, coord2) =

@@ -24,7 +24,7 @@ import           Pixelrex.Point
 
 data Params =
   Params
-    { superpixels    :: !Int
+    { clusterLength  :: !Int
     , stride         :: !Int
     , iterations     :: !Int
     , distanceWeight :: !Float
@@ -51,12 +51,10 @@ instance Euclidean (Point3D Float) where
       result = sqrt $ ((x2 - x1) ^ 2) + ((y2 - y1) ^ 2) + ((z2 - z1) ^ 2)
 
 process :: Params -> Image Float -> Image Float
-process !(Params !superpixels !stride !iterations !weight) image =
+process !(Params !length !stride !iterations !weight) image =
   process' iterations 1 initialClusters
   where
     Sz (h :. w) = A.size image
-    imagePixels = fromIntegral $ h * w
-    length = floor $ sqrt $ imagePixels / (fromIntegral $ superpixels)
     initialClusters = initialCenters length image
     normalizedWeight = weight / fromIntegral length
     process' !iterations !step !clusters =

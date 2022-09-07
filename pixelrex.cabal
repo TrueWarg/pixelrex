@@ -29,6 +29,7 @@ library
       Pixelrex.Core.Array
       Pixelrex.Core.Point
       Pixelrex.Core.Distance
+      Pixelrex.Core.DCEL
       Pixelrex.Segmentation.Slic
   hs-source-dirs:
       src

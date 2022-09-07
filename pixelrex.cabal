@@ -30,6 +30,7 @@ library
       Pixelrex.Core.Point
       Pixelrex.Core.Distance
       Pixelrex.Segmentation.Slic
+      Pixelrex.Generation.Fortune
   hs-source-dirs:
       src
   ghc-options: -O3

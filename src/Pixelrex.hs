@@ -1,9 +1,9 @@
 module Pixelrex
-  ( module Pixelrex.Array
-  , module Pixelrex.Slic
-  , module Pixelrex.Point
+  ( module Pixelrex.Core.Array
+  , module Pixelrex.Core.Point
+  , module Pixelrex.Segmentation.Slic
   ) where
 
-import           Pixelrex.Array
-import           Pixelrex.Point
-import           Pixelrex.Slic
+import           Pixelrex.Core.Array
+import           Pixelrex.Core.Point
+import           Pixelrex.Segmentation.Slic

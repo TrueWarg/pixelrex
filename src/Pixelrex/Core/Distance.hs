@@ -1,4 +1,4 @@
-module Pixelrex.Distance
+module Pixelrex.Core.Distance
   ( Euclidean(..)
   ) where
 

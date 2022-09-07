@@ -2,12 +2,12 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE BangPatterns #-}
 
-module Pixelrex.Point
+module Pixelrex.Core.Point
   ( Point3D
   , Point2D
   ) where
 
-import           Pixelrex.Distance
+import           Pixelrex.Core.Distance
 
 type Point3D a = (a, a, a)
 

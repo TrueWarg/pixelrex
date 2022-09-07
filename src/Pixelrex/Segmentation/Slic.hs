@@ -9,7 +9,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 
 -------------------------------------------------------------------------------------------
-module Pixelrex.Slic where
+module Pixelrex.Segmentation.Slic where
 
 import           Control.Monad
 import           Control.Monad.ST         (ST, runST)
@@ -19,13 +19,13 @@ import           Data.Int                 (Int8)
 import           Data.STRef
 import           Debug.Trace              (trace)
 
-import           Pixelrex.Array           (Ix2 (..), Matrix, Sz (..), loopM_,
+import           Pixelrex.Core.Array           (Ix2 (..), Matrix, Sz (..), loopM_,
                                            (!), (!>))
 
 import           Data.Hashable
-import qualified Pixelrex.Array           as A
-import           Pixelrex.Distance
-import           Pixelrex.Point
+import qualified Pixelrex.Core.Array           as A
+import           Pixelrex.Core.Distance
+import           Pixelrex.Core.Point
 
 -------------------------------------------------------------------------------------------
 data Params =

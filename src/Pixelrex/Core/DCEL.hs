@@ -1,37 +1,37 @@
 module Pixelrex.Core.DCEL where
 
-import           Pixelrex.Core.Array as A
+import qualified Pixelrex.Core.Array as A
 import           Pixelrex.Core.Point
 
 data Seed =
   Seed
-    { order  :: Int
-    , coords :: Point2D Int
-    , face   :: Face
+    { _order  :: Int
+    , _coords :: Point2D Int
+    , _face   :: Face
     }
 
 data Face =
   Face
-    { seed          :: Seed
-    , outerHalfEdge :: HalfEdge
+    { _seed          :: Seed
+    , _outerHalfEdge :: HalfEdge
     }
 
 type Vertex = Point2D Int
 
 data HalfEdge =
   HalfEdge
-    { origin       :: Vertex
-    , destination  :: Vertex
-    , twin         :: HalfEdge
-    , incidentFace :: Face
-    , prev         :: HalfEdge
-    , next         :: HalfEdge
+    { _origin       :: Vertex
+    , _destination  :: Vertex
+    , _twin         :: HalfEdge
+    , _incidentFace :: Face
+    , _prev         :: HalfEdge
+    , _next         :: HalfEdge
     }
 
 data Diagram =
   Diagram
-    { seeds    :: A.Array A.B A.Ix1 Seed
-    , faces     :: A.Array A.B A.Ix1 Face
-    , vertices  :: [Vertex]
-    , halfEdges :: [HalfEdge]
+    { _seeds    :: A.Vector A.B Seed
+    , _faces     :: A.Vector A.B Face
+    , _vertices  :: [Vertex]
+    , _halfEdges :: [HalfEdge]
     }

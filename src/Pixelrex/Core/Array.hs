@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+-------------------------------------------------------------------------------------------
 module Pixelrex.Core.Array
   ( module Data.Massiv.Array
   , module Data.Massiv.Array.IO
@@ -17,8 +18,9 @@ import           Data.Massiv.Array
 import           Data.Massiv.Array       as A
 import           Data.Massiv.Array.IO    hiding (Image)
 import           Data.STRef
-import           Pixelrex.Core.Point          (Point2D)
+import           Pixelrex.Core.Point     (Point2D)
 
+-------------------------------------------------------------------------------------------
 writeToBlock_ ::
      (Manifest r e, PrimMonad m)
   => MMatrix (PrimState m) r e

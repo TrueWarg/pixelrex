@@ -30,6 +30,8 @@ library
       Pixelrex.Core.Point
       Pixelrex.Core.Distance
       Pixelrex.Core.DCEL
+      Pixelrex.Geometry.Core
+      Pixelrex.Geometry.Voronoi
       Pixelrex.Segmentation.Slic
   hs-source-dirs:
       src

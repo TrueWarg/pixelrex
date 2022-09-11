@@ -5,21 +5,54 @@ module Pixelrex.Geometry.Core where
 
 import           Data.Foldable
 import           Data.List
+import           Data.Map            (Map)
+import qualified Data.Map            as M
+import           Data.Set            (Set)
+import qualified Data.Set            as S
 import           Pixelrex.Core.Array ((!))
 import qualified Pixelrex.Core.Array as A
 import           Pixelrex.Core.Point (Point2D)
 
 -------------------------------------------------------------------------------------------
+type Point = Point2D Double
+
 data BBox =
-  BBox !(Point2D Double) !(Point2D Double)
+  BBox !(Point) !(Point)
   deriving (Eq, Show)
 
 newtype Polygon =
-  Polygon (A.Vector A.U (Point2D Double))
+  Polygon (A.Vector A.U (Point))
+  deriving (Eq, Show)
+
+data PolygonOrientation
+  = PolygonPos
+  | PolygonNeg
   deriving (Eq, Show)
 
 data Line =
-  Line !(Point2D Double) !(Point2D Double)
+  Line !(Point) !(Point)
+  deriving (Eq, Show)
+
+data LineCut
+  = NoCut Point Point
+  | Cut Point Point Point
+  deriving (Eq, Show)
+
+data LineIntersection
+  = SegmentIntersection Point
+  | InfinityLineIntersectionLeft Point
+  | InfinityLineIntersectionRight Point
+  | InfinityLineIntersection Point
+  | Parallel
+  | Collinear
+  deriving (Eq, Show)
+
+newtype EdgeGraph =
+  EdgeGraph (Map Point (Set Point))
+  deriving (Eq, Ord)
+
+data Matrix2D =
+  Matrix2D !Double !Double !Double !Double
   deriving (Eq, Show)
 
 -------------------------------------------------------------------------------------------
@@ -44,7 +77,7 @@ instance HasBounds BBox where
 instance HasBounds Line where
   bounds (Line start end) = BBox start end
 
-instance HasBounds (Point2D Double) where
+instance HasBounds (Point) where
   bounds p = BBox p p
 
 instance (HasBounds a) => HasBounds [a] where
@@ -60,12 +93,12 @@ polygonFromBounds bounded =
 
 -------------------------------------------------------------------------------------------
 {-# INLINE isPointInPolygon #-}
-isPointInPolygon :: Point2D Double -> Polygon -> Bool
+isPointInPolygon :: Point -> Polygon -> Bool
 isPointInPolygon point polygon =
   odd (edgeTraversalsCount point (polygonEdges polygon))
 
 -------------------------------------------------------------------------------------------
-edgeTraversalsCount :: Foldable f => Point2D Double -> f Line -> Int
+edgeTraversalsCount :: Foldable f => Point -> f Line -> Int
 edgeTraversalsCount point edges
   | areBBoxesOverlapping point edgesBB = length intersections
   | otherwise = 0
@@ -75,6 +108,10 @@ edgeTraversalsCount point edges
     testRay = Line ((leftX - 1), (pointY - 1)) point
     (_, pointY) = point
     intersections = filter (not . areLinesParallel testRay) edges'
+
+-------------------------------------------------------------------------------------------
+calculateLinesIntersection :: Line -> Line -> LineIntersection
+calculateLinesIntersection lineA lineB = error "Not Implemented yet"
 
 -------------------------------------------------------------------------------------------
 {-# INLINE areLinesParallel #-}
@@ -114,8 +151,66 @@ areBBoxesOverlapping a b = check (bounds a) (bounds b)
 
 -------------------------------------------------------------------------------------------
 cutPolygon :: Line -> Polygon -> [Polygon]
-cutPolygon cuttingLine polyfon = error "Not implemented yet"
+cutPolygon cuttingLine polygon =
+  reconstructPolygons
+    (polygonOrientation polygon)
+    (createEdgeGraph
+       cuttingLine
+       (polygonOrientation polygon)
+       -- todo: rewrite all function using vector instead list
+       (A.toList $ A.map (cutLineWithLine cuttingLine) (polygonEdges polygon)))
 
 -------------------------------------------------------------------------------------------
 perpendicularBisector :: Line -> Line
 perpendicularBisector line@(Line start end) = error "Not implemented yet"
+
+-------------------------------------------------------------------------------------------
+cutLineWithLine :: Line -> Line -> LineCut
+cutLineWithLine cuttingLine line =
+  case calculateLinesIntersection cuttingLine line of
+    SegmentIntersection p           -> cut p
+    InfinityLineIntersectionRight p -> cut p
+    Collinear                       -> cut start
+    _otherwise                      -> noCut
+  where
+    Line start end = line
+    cut p = Cut start p end
+    noCut = NoCut start end
+
+-------------------------------------------------------------------------------------------
+polygonOrientation :: Polygon -> PolygonOrientation
+polygonOrientation polygon
+  | signedPolygonArea polygon >= 0 = PolygonPos
+  | otherwise = PolygonNeg
+
+-------------------------------------------------------------------------------------------
+createEdgeGraph :: Line -> PolygonOrientation -> [LineCut] -> EdgeGraph
+createEdgeGraph cuttingLine orientation cuts = error "ot implemented yet"
+
+-------------------------------------------------------------------------------------------
+reconstructPolygons :: PolygonOrientation -> EdgeGraph -> [Polygon]
+reconstructPolygons orientation graph = error "Not implemented yet"
+
+-------------------------------------------------------------------------------------------
+signedPolygonArea :: Polygon -> Double
+signedPolygonArea (Polygon points) =
+  let size@(A.Sz szN) = A.size points
+      determinants =
+        A.makeArrayR
+          A.B
+          A.Par
+          size
+          (\i ->
+             let (x1, y1) = points ! i
+                 (x2, y2) =
+                   if (i < szN - 1)
+                     then points ! i
+                     else points ! 0
+                 matrix = Matrix2D x1 y1 x2 y2
+              in matrix2Determinant matrix)
+   in A.sum determinants / 2
+
+-------------------------------------------------------------------------------------------
+{-# INLINE matrix2Determinant #-}
+matrix2Determinant :: Matrix2D -> Double
+matrix2Determinant (Matrix2D a11 a12 a21 a22) = a11 * a22 - a12 * a21

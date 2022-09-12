@@ -26,6 +26,7 @@ source-repository head
 library
   exposed-modules:
       Pixelrex
+      Pixelrex.Core.Algebra
       Pixelrex.Core.Array
       Pixelrex.Core.Point
       Pixelrex.Core.Distance

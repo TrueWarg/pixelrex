@@ -18,6 +18,20 @@ packages:
       sha256: 51dda0aa70849588d074125f324beba1c8736cfa486e7f4a90a798b1d0e6019d
   original:
     hackage: hashable-1.4.0.2@sha256:0cddd0229d1aac305ea0404409c0bbfab81f075817bd74b8b2929eff58333e55,5005
+- completed:
+    hackage: blank-canvas-0.7.3@sha256:29d171236031d69f89d76b6cfebe86faa6e0e9b7717074da684ea0f1b71fc4ef,5103
+    pantry-tree:
+      size: 1495
+      sha256: a4e10d3fa8a24ca6ade08885fdc66df3785f2ae61379df44a936ca2cc05dc5df
+  original:
+    hackage: blank-canvas-0.7.3@sha256:29d171236031d69f89d76b6cfebe86faa6e0e9b7717074da684ea0f1b71fc4ef,5103
+- completed:
+    hackage: kansas-comet-0.4.1@sha256:2e266526750834329471b59073a66e1e14ca026cda2774a2fbe67c74c6b3f6a5,2306
+    pantry-tree:
+      size: 383
+      sha256: 537a165fff4cfe1b381e990f26b18e1a493ce2157b378b43253666daaf77919c
+  original:
+    hackage: kansas-comet-0.4.1@sha256:2e266526750834329471b59073a66e1e14ca026cda2774a2fbe67c74c6b3f6a5,2306
 snapshots:
 - completed:
     size: 618952

@@ -7,8 +7,10 @@ import qualified Pixelrex.Core.Array       as A
 import           Pixelrex.Core.Point       (Point2D)
 
 import           Data.List
+import           Debug.Trace               (trace)
 import           Pixelrex.Core.FunctorMeta
 import           Pixelrex.Geometry.Core
+import           Pixelrex.Geometry.Cut
 
 -------------------------------------------------------------------------------------------
 type Seed = Point2D Double
@@ -57,16 +59,16 @@ instance FunctorMeta Diagram where
      in diagram {_cells = newCells}
 
 -------------------------------------------------------------------------------------------
-{-# INLINE createVoronoi #-}
 createVoronoi ::
      (Foldable f, HasBounds bounded) => bounded -> f (Seed, a) -> Diagram a
 createVoronoi frame = foldl' addPoint (emptyVoronoi frame)
 
+{-# INLINE createVoronoi #-}
 -------------------------------------------------------------------------------------------
-{-# INLINE emptyVoronoi #-}
 emptyVoronoi :: HasBounds bounded => bounded -> Diagram a
 emptyVoronoi world = Diagram (bounds world) A.empty
 
+{-# INLINE emptyVoronoi #-}
 -------------------------------------------------------------------------------------------
 addPoint :: Diagram a -> (Seed, a) -> Diagram a
 addPoint (Diagram box cells) (seed, a) = Diagram box (A.computeAs A.B cells')
@@ -85,14 +87,18 @@ addPoint (Diagram box cells) (seed, a) = Diagram box (A.computeAs A.B cells')
 
 -------------------------------------------------------------------------------------------
 updateCell :: Seed -> Cell a -> Cell a
-updateCell seed cell = clipCell (perpendicularBisector (Line (_seed meta) seed)) cell
+updateCell seed cell =
+  clipCell (perpendicularBisector (Segment (_seed meta) seed)) cell
   where
     meta = _meta cell
 
+{-# INLINE updateCell #-}
 -------------------------------------------------------------------------------------------
-clipCell :: Line -> Cell a -> Cell a
-clipCell line cell =
-  case filter (isPointInPolygon (_seed meta)) (cutPolygon line (_polygon meta)) of
+clipCell :: Segment -> Cell a -> Cell a
+clipCell segment cell =
+  case filter
+         (isPointInPolygon (_seed meta))
+         (cutPolygon segment (_polygon meta)) of
     [polygon] -> cell {_meta = meta {_polygon = polygon}}
     otherwiseResult ->
       error $ "Expected 1 cell, got " ++ (show $ length otherwiseResult)

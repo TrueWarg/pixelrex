@@ -2,10 +2,12 @@ module Pixelrex
   ( module Pixelrex.Core.Array
   , module Pixelrex.Core.Point
   , module Pixelrex.Segmentation.Slic
-  , module Pixelrex.Generation.Fortune
+  , module Pixelrex.Geometry.Voronoi
+  , module Pixelrex.Geometry.Core
   ) where
 
 import           Pixelrex.Core.Array
 import           Pixelrex.Core.Point
-import           Pixelrex.Generation.Fortune
+import           Pixelrex.Geometry.Voronoi
+import           Pixelrex.Geometry.Core
 import           Pixelrex.Segmentation.Slic

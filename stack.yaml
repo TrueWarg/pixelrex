@@ -41,6 +41,8 @@ extra-deps:
 #   commit: e7b331f14bcffb8367cd58fbfc8b40ec7642100a
 - hashtables-1.3@sha256:ab21804fdafbbd8ad918b2911dabb729ae0ea891780fe66bf7804cbcd07edadf,10379
 - hashable-1.4.0.2@sha256:0cddd0229d1aac305ea0404409c0bbfab81f075817bd74b8b2929eff58333e55,5005
+- blank-canvas-0.7.3@sha256:29d171236031d69f89d76b6cfebe86faa6e0e9b7717074da684ea0f1b71fc4ef,5103
+- kansas-comet-0.4.1@sha256:2e266526750834329471b59073a66e1e14ca026cda2774a2fbe67c74c6b3f6a5,2306
 # extra-deps: []
 
 # Override default flag values for local packages and extra-deps

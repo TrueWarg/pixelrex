@@ -11,6 +11,7 @@ module Pixelrex.Geometry.Core
   , Matrix2D(..)
   , AffineTransCoef(..)
   , AffineTransformation(..)
+  , Area(..)
   , HasBounds
   , bounds
   , polygonFromBounds
@@ -95,6 +96,9 @@ class HasBounds a where
 -- | f: R^n -> R^n ~ f(x) = M * x + v
 class AffineTransformation a where
   transform :: AffineTransCoef -> a -> a
+
+class Area a where
+  area :: a -> Double
 
 -------------------------------------------------------------------------------------------
 --   * - box A

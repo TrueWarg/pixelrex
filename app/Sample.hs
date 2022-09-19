@@ -6,16 +6,18 @@
 module Sample
   ( slicSample
   , voronoiSample
+  , bsdRoomSample
   ) where
 
 import           Control.Monad
 import           Data.Massiv.Array.IO            as A
 import qualified Graphics.Blank                  as Blank
-import           Pixelrex                        hiding (forM)
+import           Pixelrex                        hiding (forM, zip)
 import qualified Pixelrex                        as R
 import           System.Random.MWC
 import qualified System.Random.MWC               as MWC
 import           System.Random.MWC.Distributions
+import     qualified      Data.Text                       as T
 
 slicSample :: IO ()
 slicSample = do
@@ -101,3 +103,50 @@ gaussianDistributedPoints gen container covariance count =
       if vec `isInsideBBox` bb
         then pure vec
         else randomPoint
+
+bsdRoomSample :: IO ()
+bsdRoomSample = do
+  let
+    params = GenBSDParams (Sizes 10 10) 600 400
+  gen <- createSystemRandom
+  tree <- generateBSDTree gen params
+  let
+    metas = leafMetas tree
+  putStrLn $ show $ length metas
+  Blank.blankCanvas 3000 $ \context -> do
+    Blank.send context $ do
+      forM (zip [0..] metas) $ \(idx, meta) -> do
+        let (BSDMeta (x, y) w h _ _) = meta
+        Blank.beginPath()
+        Blank.moveTo(x, y)
+        Blank.lineTo(x, y + h)
+        Blank.lineTo(x + w, y + h)
+        Blank.lineTo(x + w, y)
+        Blank.closePath()
+        Blank.lineWidth 1
+
+        Blank.strokeStyle $ color idx
+        Blank.stroke()
+        Blank.beginPath()
+        Blank.fillStyle $ color idx
+        Blank.arc(x + w / 2, y + h / 2, 1, 0, 2 * pi, False)
+        Blank.closePath()
+        Blank.fill()
+    return ()
+
+
+color :: Int -> T.Text
+color idx = colors !! (idx `mod` 6)
+  where
+    colors = ["red", "blue", "green", "orange", "black", "orange"]
+
+leafMetas :: BSDTree -> [BSDMeta]
+leafMetas tree = leaves' [] [tree]
+  where
+    leaves' ls [] = ls
+    leaves' ls (node : queue) = 
+      case node of
+        (Node meta left right) -> if (left == Empty && right == Empty) 
+          then leaves' (_bsdMeta node : ls) queue 
+          else leaves' ls (left : right : queue) 
+        Empty -> leaves' ls queue

@@ -12,6 +12,8 @@ module Pixelrex.Geometry.Core
   , AffineTransCoef(..)
   , AffineTransformation(..)
   , Area(..)
+  , BBoxesOverlaping(..)
+  , Sizes2D(..)
   , HasBounds
   , bounds
   , polygonFromBounds
@@ -20,6 +22,7 @@ module Pixelrex.Geometry.Core
   , calculateSegmentsIntersection
   , polygonEdges
   , areBBoxesOverlapping
+  , bboxesOverlaping
   , polygonOrientation
   , perpendicularBisector
   , matrix2Determinant
@@ -33,6 +36,7 @@ module Pixelrex.Geometry.Core
   , angleOf
   , boundingBoxCenter
   , isInsideBBox
+  , translate
   ) where
 
 import           Data.Fixed
@@ -52,6 +56,10 @@ type Point = Point2D Double
 
 data BBox =
   BBox !(Point) !(Point)
+  deriving (Eq, Show)
+
+data Sizes2D =
+  Sizes2D !Double !Double
   deriving (Eq, Show)
 
 newtype Polygon =
@@ -89,6 +97,11 @@ data Matrix2D =
   Matrix2D !Double !Double !Double !Double
   deriving (Eq, Show)
 
+data BBoxesOverlaping
+  = BBoxesAreOverlap !Sizes2D
+  | BBoxesAreTouchVertical !Double
+  | BBoxesAreTouchHorizontal !Double
+  | BBoxesAreNotOverlap !Sizes2D -- ^ sizes between bbox sides 
 -------------------------------------------------------------------------------------------
 class HasBounds a where
   bounds :: a -> BBox
@@ -157,6 +170,12 @@ instance AffineTransformation b => AffineTransformation (a -> b) where
 instance AffineTransformation (Double, Double) where
   transform (AffineTransCoef (Matrix2D a b d e) (c, f)) (x, y) =
     ((a * x + b * y + c), (d * x + e * y + f))
+
+instance Area BBox where
+  area (BBox (x1, y1) (x2, y2)) = abs $ (x2 - x1) * (y2 - y1)
+
+instance AffineTransformation BBox where
+  transform coef (BBox p1 p2) = BBox (transform coef p1) (transform coef p2)  
 
 -------------------------------------------------------------------------------------------
 polygonFromBounds :: HasBounds bounded => bounded -> Polygon
@@ -245,6 +264,29 @@ areBBoxesOverlapping a b = check (bounds a) (bounds b)
       | otherwise = True
 
 {-# INLINE areBBoxesOverlapping #-}
+-------------------------------------------------------------------------------------------
+bboxesOverlaping :: (HasBounds a, HasBounds b) => a -> b -> BBoxesOverlaping
+bboxesOverlaping a b = go sizesA sizesB unionSizes
+  where
+    bboxA = bounds a
+    bboxB = bounds b
+    sizesA = bboxSizes bboxA
+    sizesB = bboxSizes bboxB
+    unionSizes = bboxSizes $ bboxA <> bboxB
+    go (Sizes2D widthA heightA) (Sizes2D widthB heightB) (Sizes2D widthU heightU)
+     | (widthSum < 0) || (heightSum < 0) = BBoxesAreNotOverlap $ Sizes2D (abs widthSum) (abs heightSum)
+     | widthSum == 0 = BBoxesAreTouchVertical heightSum
+     | heightSum == 0 = BBoxesAreTouchHorizontal widthSum
+     | otherwise = BBoxesAreOverlap $ Sizes2D widthSum heightSum
+     where
+      widthSum = widthA + widthB - widthU
+      heightSum = heightA + heightB - heightU
+
+-------------------------------------------------------------------------------------------
+bboxSizes :: BBox -> Sizes2D
+bboxSizes (BBox (x1, y1) (x2, y2)) = Sizes2D (abs (x2 - x1)) (abs (y2 - y1))
+
+{-# INLINE bboxSizes #-}
 -------------------------------------------------------------------------------------------
 perpendicularBisector :: Segment -> Segment
 perpendicularBisector segment@(Segment start end) =
@@ -393,3 +435,5 @@ centerSegment segment@(Segment start end) = transform (translate delta) segment
 -------------------------------------------------------------------------------------------
 translate :: Point -> AffineTransCoef
 translate = AffineTransCoef mempty
+
+{-# INLINE translate #-}

@@ -1,4 +1,4 @@
-module Pixelrex.Geometry.BSDRoom
+module Pixelrex.Generation.BSDRoom
   ( BSDMeta(..)
   , BSDTree(..)
   , Sizes(..)

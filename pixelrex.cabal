@@ -37,6 +37,7 @@ library
       Pixelrex.Geometry.Cut
       Pixelrex.Geometry.Voronoi
       Pixelrex.Gen.BSDRoom
+      Pixelrex.Gen.Markov
       Pixelrex.Segmentation.Slic
   hs-source-dirs:
       src

@@ -2,11 +2,13 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE BangPatterns      #-}
 
 module Sample
   ( slicSample
   , voronoiSample
   , bsdRoomSample
+  , markovRoomsSample
   ) where
 
 import           Control.Monad
@@ -145,6 +147,53 @@ bsdRoomSample = do
           Nothing -> return ()
     return ()
 
+markovRoomsSample :: IO ()
+markovRoomsSample = do
+  gen <- createSystemRandom
+  rooms <- generateRooms gen 2 250
+  putStrLn (show $ R.size rooms)
+  let
+    shiftX = 600
+    shiftY = 250
+  Blank.blankCanvas 3000 $ \context -> do
+    Blank.send context $ do
+      forM (zip [0..] (R.toList rooms)) $ \(idx, (BBox (x1, y1) (x2, y2))) -> do
+        Blank.beginPath()
+        Blank.moveTo(x1 + shiftX, y1 + shiftY)
+        Blank.lineTo(x1 + shiftX, y2 + shiftY)
+        Blank.lineTo(x2 + shiftX, y2 + shiftY)
+        Blank.lineTo(x2 + shiftX, y1 + shiftY)
+        Blank.closePath()
+        Blank.fillStyle (color idx)
+        Blank.lineWidth 1
+        Blank.fill()
+    return ()
+
+generateRooms' gen n temperature = do
+  initialRooms <- initialState gen n
+  let
+    shiftX = 600
+    shiftY = 250
+    go rooms !t = do
+      newRooms <- updateRooms gen rooms t
+      Blank.blankCanvas 3000 $ \context -> do
+        Blank.send context $ do
+          forM (zip [0..] (R.toList rooms)) $ \(idx, (BBox (x1, y1) (x2, y2))) -> do
+           Blank.beginPath()
+           Blank.moveTo(x1 + shiftX, y1 + shiftY)
+           Blank.lineTo(x1 + shiftX, y2 + shiftY)
+           Blank.lineTo(x2 + shiftX, y2 + shiftY)
+           Blank.lineTo(x2 + shiftX, y1 + shiftY)
+           Blank.closePath()
+           Blank.fillStyle (color idx)
+           Blank.lineWidth 1
+           Blank.fill()
+        return ()
+      if (t > 0.1) then
+        go newRooms (t * 0.99)
+      else return rooms
+  go initialRooms temperature
+  return ()
 
 color :: Int -> T.Text
 color idx = colors !! (idx `mod` 6)

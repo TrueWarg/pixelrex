@@ -23,12 +23,22 @@ import           Pixelrex.Core.Array           (Sz (..), loopM_, (!), (!>), Vect
 import qualified Pixelrex.Core.Array           as A
 -- draft impl
 
-generateRooms :: (PrimMonad m) => Gen (PrimState m) -> Int -> m (Vector A.B BBox)
-generateRooms gen n = do
-  rooms <- initialState gen n
+generateRooms :: (PrimMonad m) => Gen (PrimState m) -> Int -> Double -> m (Vector A.B BBox)
+generateRooms gen n temperature = do
+  initialRooms <- initialState gen n
+  let
+    go rooms !t = do
+      newRooms <- updateRooms gen rooms t
+      if (t > 0.1) then
+        go newRooms (t * 0.99)
+      else return rooms
+  go initialRooms temperature
+
+updateRooms :: (PrimMonad m) => Gen (PrimState m) -> Vector A.B BBox -> Double -> m (Vector A.B BBox)
+updateRooms gen rooms temperature = do
   uniform <- uniformDoublePositive01M gen
   let
-    temperature = 250.0
+    (Sz roomSize) = A.size rooms
     (Sz movesSize) = A.size moves
     currentCost = volumeCostFunction(rooms)
     rawProbs =
@@ -43,17 +53,16 @@ generateRooms gen n = do
     sampledIndex = case (A.findIndex (> uniform) cdf) of
       Just (A.Ix1 idx) -> idx
       Nothing -> 0
-    roomindex = sampledIndex `div` n
+    roomindex = sampledIndex `div` roomSize
 
     moveindex = sampledIndex `mod` movesSize
     updatedRooms =
-      A.makeArrayR A.B A.Par (Sz n) $ \i ->
+      A.makeArrayR A.B A.Par (Sz roomSize) $ \i ->
         if (i == roomindex)
           then transform (moves ! moveindex) (rooms ! i)
           else rooms ! i
 
-
-  return rooms
+  return updatedRooms
 
 calculateCdf :: Vector A.S Double -> Vector A.S Double
 calculateCdf probs = runST $ go probs
@@ -73,7 +82,7 @@ calculateCdf probs = runST $ go probs
 
 initialState :: (PrimMonad m) => Gen (PrimState m) -> Int -> m (Vector A.B BBox)
 initialState gen n = do
-    generated <- A.sreplicateM (Sz n) $ uniformRM (2, 5::Int) gen
+    generated <- A.sreplicateM (Sz n) $ uniformRM (20, 50::Int) gen
     let
       bboxes = A.smap (\p -> BBox (0, 0) (fromIntegral p, fromIntegral p)) generated
     return $ A.computeAs A.B $ bboxes
@@ -99,10 +108,10 @@ calculateMoveRowProbs target currentCost rooms t = A.smap (f target) moves
 volumeCostFunction :: Vector A.B BBox -> Double
 volumeCostFunction rooms = A.sfoldl fun 0 zipped
   where
-    overlapWeight = 3
+    overlapWeight = -4
     notOverlapWeight = 4
-    vTouchWeight = -10
-    hTouchWeight = -10
+    vTouchWeight = -6
+    hTouchWeight = -6
 
     size = A.size rooms
     is = A.sfoldl A.sappend A.sempty (A.smap (A.sreplicate size) rooms)
@@ -110,7 +119,7 @@ volumeCostFunction rooms = A.sfoldl fun 0 zipped
     zipped = A.szip is js
     fun acc (box1, box2) =
       case (bboxesOverlaping box1 box2) of
-        (BBoxesAreOverlap (Sizes2D w h)) -> acc + w * h * overlapWeight 
+        (BBoxesAreOverlap (Sizes2D w h)) -> acc + (abs $ w * h) * overlapWeight 
         (BBoxesAreTouchVertical h) -> acc + h * vTouchWeight + (area box1)
         (BBoxesAreTouchHorizontal w) -> acc + w * hTouchWeight + (area box1)
-        (BBoxesAreNotOverlap (Sizes2D w h)) -> acc + w * h * notOverlapWeight - (area box1)
+        (BBoxesAreNotOverlap (Sizes2D w h)) -> acc + (abs $ w * h) * notOverlapWeight

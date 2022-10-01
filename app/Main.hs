@@ -7,4 +7,4 @@ module Main where
 
 import           Sample
 
-main = bsdRoomSample
+main = markovRoomsSample

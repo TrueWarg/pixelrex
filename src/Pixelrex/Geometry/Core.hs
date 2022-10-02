@@ -102,6 +102,7 @@ data BBoxesOverlaping
   | BBoxesAreTouchVertical !Double
   | BBoxesAreTouchHorizontal !Double
   | BBoxesAreNotOverlap !Sizes2D -- ^ sizes between bbox sides 
+  deriving (Eq, Show)
 -------------------------------------------------------------------------------------------
 class HasBounds a where
   bounds :: a -> BBox

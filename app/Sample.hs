@@ -150,7 +150,7 @@ bsdRoomSample = do
 markovRoomsSample :: IO ()
 markovRoomsSample = do
   gen <- createSystemRandom
-  rooms <- generateRooms gen 2 250
+  rooms <- generateRooms gen 30 250
   putStrLn (show $ R.size rooms)
   let
     shiftX = 600

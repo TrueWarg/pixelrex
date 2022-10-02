@@ -30,7 +30,7 @@ generateRooms gen n temperature = do
     go rooms !t = do
       newRooms <- updateRooms gen rooms t
       if (t > 0.1) then
-        go newRooms (t * 0.99)
+        go newRooms (t*0.99)
       else return rooms
   go initialRooms temperature
 
@@ -40,12 +40,13 @@ updateRooms gen rooms temperature = do
   let
     (Sz roomSize) = A.size rooms
     (Sz movesSize) = A.size moves
-    currentCost = volumeCostFunction(rooms)
+    currentCost = calculateCost(rooms)
+    indices = A.fromList A.Par [0.. (roomSize - 1)] :: Vector A.S Int
     rawProbs =
       A.sfoldl A.sappend A.sempty $
       A.smap
-        (\room -> calculateMoveRowProbs room currentCost rooms temperature)
-        rooms
+        (\target -> calculateMoveRowProbs target currentCost rooms temperature)
+        indices
 
     sum = A.ssum rawProbs
     probs = A.computeAs A.S $ A.smap (/ sum) rawProbs
@@ -53,8 +54,8 @@ updateRooms gen rooms temperature = do
     sampledIndex = case (A.findIndex (> uniform) cdf) of
       Just (A.Ix1 idx) -> idx
       Nothing -> 0
-    roomindex = sampledIndex `div` roomSize
 
+    roomindex = sampledIndex `div` movesSize
     moveindex = sampledIndex `mod` movesSize
     updatedRooms =
       A.makeArrayR A.B A.Par (Sz roomSize) $ \i ->
@@ -73,16 +74,16 @@ calculateCdf probs = runST $ go probs
       cdf <- A.newMArray sz (0.0)
       accRef <- newSTRef (0.0)
       loopM_ 0 (< size) (+ 1) $ \i -> do
-        modifySTRef' accRef (+ (probs ! i))
         acc <- readSTRef accRef
-        A.write_ cdf i((probs ! i) + acc)
+        A.write_ cdf i ((probs ! i) + acc)
+        modifySTRef' accRef (+ (probs ! i))
         return ()
 
       A.freezeS cdf
 
 initialState :: (PrimMonad m) => Gen (PrimState m) -> Int -> m (Vector A.B BBox)
 initialState gen n = do
-    generated <- A.sreplicateM (Sz n) $ uniformRM (20, 50::Int) gen
+    generated <- A.sreplicateM (Sz n) $ uniformRM (10, 10::Int) gen
     let
       bboxes = A.smap (\p -> BBox (0, 0) (fromIntegral p, fromIntegral p)) generated
     return $ A.computeAs A.B $ bboxes
@@ -90,36 +91,41 @@ initialState gen n = do
 moves :: Vector A.B AffineTransCoef
 moves = A.fromList A.Par
  [ translate (0, 0)
- , translate (1, 0)
- , translate (-1, 0)
- , translate (0, 1)
- , translate (0, -1)
+ , translate (8, 0)
+ , translate (-8, 0)
+ , translate (0, 8)
+ , translate (0, -8)
  ]
 
-calculateMoveRowProbs :: BBox -> Double -> Vector A.B BBox -> Double -> Vector A.DS Double
-calculateMoveRowProbs target currentCost rooms t = A.smap (f target) moves
+calculateMoveRowProbs :: Int -> Double -> Vector A.B BBox -> Double -> Vector A.DS Double
+calculateMoveRowProbs targetIdx currentCost rooms t = A.smap (f targetIdx) moves
   where
-    f target move = 
+    (Sz size) = A.size rooms
+    indices = A.fromList A.Par [0.. (size - 1)] :: Vector A.S Int
+    f targetIdx move = 
       let
-        mapper bbox = if (bbox == target) then Geom.transform move bbox else bbox
-        traslated = A.computeAs A.B $ A.smap mapper rooms
-      in exp (- (volumeCostFunction(rooms) - currentCost) / t)
+        mapper idx = if (idx == targetIdx) then Geom.transform move (rooms ! idx) else rooms ! idx
+        traslated = A.computeAs A.B $ A.smap mapper indices
+        cost = calculateCost traslated
+      in exp (- (cost - currentCost) / t)
 
-volumeCostFunction :: Vector A.B BBox -> Double
-volumeCostFunction rooms = A.sfoldl fun 0 zipped
+calculateCost :: Vector A.B BBox -> Double
+calculateCost rooms = foldr fun 0 zipped
   where
-    overlapWeight = -4
-    notOverlapWeight = 4
-    vTouchWeight = -6
-    hTouchWeight = -6
+    overlapWeight = 1
+    notOverlapWeight = 0.01
+    vTouchWeight = -0.005
+    hTouchWeight = -0.05
 
-    size = A.size rooms
-    is = A.sfoldl A.sappend A.sempty (A.smap (A.sreplicate size) rooms)
-    js = A.sfoldl A.sappend A.sempty (A.sreplicate size rooms)
-    zipped = A.szip is js
-    fun acc (box1, box2) =
-      case (bboxesOverlaping box1 box2) of
-        (BBoxesAreOverlap (Sizes2D w h)) -> acc + (abs $ w * h) * overlapWeight 
-        (BBoxesAreTouchVertical h) -> acc + h * vTouchWeight + (area box1)
-        (BBoxesAreTouchHorizontal w) -> acc + w * hTouchWeight + (area box1)
-        (BBoxesAreNotOverlap (Sizes2D w h)) -> acc + (abs $ w * h) * notOverlapWeight
+    Sz size = A.size rooms
+    indices = [0..size - 1]
+    is = concat $ map (replicate size) indices
+
+    js = concat $ replicate size indices
+    zipped = zip is js
+    fun (i, j) acc = if (i == j) then acc else
+      case (bboxesOverlaping (rooms ! i) (rooms ! j)) of
+        (BBoxesAreOverlap (Sizes2D w h)) -> acc + w * h * overlapWeight 
+        (BBoxesAreTouchVertical h) -> acc + h * vTouchWeight
+        (BBoxesAreTouchHorizontal w) -> acc + w * hTouchWeight
+        (BBoxesAreNotOverlap (Sizes2D w h)) -> acc + w * h * notOverlapWeight

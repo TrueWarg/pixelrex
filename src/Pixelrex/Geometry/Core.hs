@@ -1,9 +1,12 @@
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 -------------------------------------------------------------------------------------------
 module Pixelrex.Geometry.Core
   ( BBox(..)
   , Polygon(..)
+  , Box(..)
   , PolygonOrientation(..)
   , Segment(..)
   , SegmentIntersection(..)
@@ -50,7 +53,10 @@ import           Pixelrex.Core.Algebra
 import           Pixelrex.Core.Array   ((!))
 import qualified Pixelrex.Core.Array   as A
 import           Pixelrex.Core.Point   (Point2D)
-
+import qualified Data.Vector.Unboxed.Base as U
+import qualified Data.Vector.Generic.Mutable as M
+import qualified Data.Vector.Generic as G
+import Control.Monad (liftM)
 -------------------------------------------------------------------------------------------
 type Point = Point2D Double
 
@@ -58,9 +64,9 @@ data BBox =
   BBox !(Point) !(Point)
   deriving (Eq, Show)
 
-data Sizes2D =
-  Sizes2D !Double !Double
-  deriving (Eq, Show)
+type Box = (Point, Point)
+
+type Sizes2D = (Double, Double)
 
 newtype Polygon =
   Polygon [Point]
@@ -101,8 +107,9 @@ data BBoxesOverlaping
   = BBoxesAreOverlap !Sizes2D
   | BBoxesAreTouchVertical !Double
   | BBoxesAreTouchHorizontal !Double
-  | BBoxesAreNotOverlap !Sizes2D -- ^ sizes between bbox sides 
+  | BBoxesAreNotOverlap !Sizes2D -- ^ sizes between bbox sides
   deriving (Eq, Show)
+
 -------------------------------------------------------------------------------------------
 class HasBounds a where
   bounds :: a -> BBox
@@ -151,8 +158,9 @@ instance VectorSpace Angle where
   a */ Rad b = Rad (a * b)
 
 instance AffineTransformation Segment where
-  transform t (Segment start end) = Segment (transform t start) (transform t end)
-
+  transform t (Segment start end) =
+    Segment (transform t start) (transform t end)
+  
 -- Just matrix product
 instance Semigroup Matrix2D where
   Matrix2D a11 a12 a21 a22 <> Matrix2D b11 b12 b21 b22 =
@@ -176,8 +184,58 @@ instance Area BBox where
   area (BBox (x1, y1) (x2, y2)) = abs $ (x2 - x1) * (y2 - y1)
 
 instance AffineTransformation BBox where
-  transform coef (BBox p1 p2) = BBox (transform coef p1) (transform coef p2)  
+  transform coef (BBox p1 p2) = BBox (transform coef p1) (transform coef p2)
 
+instance AffineTransformation Box where
+  transform coef (p1, p2) = ((transform coef p1), (transform coef p2))
+
+data instance U.Vector BBox =  V_BBox {-# UNPACK #-} !(U.Vector Double)
+data instance U.MVector s BBox = MV_BBox {-# UNPACK #-} !(U.MVector s Double)
+
+instance U.Unbox BBox
+
+instance M.MVector U.MVector BBox where
+  {-# INLINE basicLength #-}
+  {-# INLINE basicUnsafeSlice #-}
+  {-# INLINE basicOverlaps #-}
+  {-# INLINE basicUnsafeNew #-}
+  {-# INLINE basicUnsafeRead #-}
+  {-# INLINE basicUnsafeWrite #-}
+  basicLength (MV_BBox v) = M.basicLength v
+  basicUnsafeSlice m n (MV_BBox v) = MV_BBox (M.basicUnsafeSlice (4*m) (4*n) v)
+  basicOverlaps (MV_BBox v) (MV_BBox u) = M.basicOverlaps v u
+  basicUnsafeNew n = liftM MV_BBox (M.basicUnsafeNew (4*n))
+  basicUnsafeRead (MV_BBox v) i =
+    do let o = 4*i
+       x1 <- M.basicUnsafeRead v o
+       y1 <- M.basicUnsafeRead v (o+1)
+       x2 <- M.basicUnsafeRead v (o+2)
+       y2 <- M.basicUnsafeRead v (o+2)
+       return (BBox (x1, y1) (x2, y2))
+  basicUnsafeWrite (MV_BBox v) i (BBox (x1, y1) (x2, y2)) =
+    do let o = 4*i
+       M.basicUnsafeWrite v o     x1
+       M.basicUnsafeWrite v (o+1) y1
+       M.basicUnsafeWrite v (o+2) x2
+       M.basicUnsafeWrite v (o+2) y2
+
+instance G.Vector U.Vector BBox where
+  {-# INLINE basicUnsafeFreeze #-}
+  {-# INLINE basicUnsafeThaw   #-}
+  {-# INLINE basicLength       #-}
+  {-# INLINE basicUnsafeSlice  #-}
+  {-# INLINE basicUnsafeIndexM #-}
+  basicUnsafeFreeze (MV_BBox v) = liftM V_BBox (G.basicUnsafeFreeze v)
+  basicUnsafeThaw   (V_BBox v) = liftM MV_BBox (G.basicUnsafeThaw v)
+  basicLength       (V_BBox v) = G.basicLength v
+  basicUnsafeSlice m n (V_BBox v) = V_BBox (G.basicUnsafeSlice (4*m) (4*n) v)
+  basicUnsafeIndexM (V_BBox v) i =
+    do let o = 4*i
+       x1 <- G.basicUnsafeIndexM v o
+       y1 <- G.basicUnsafeIndexM v (o+1)
+       x2 <- G.basicUnsafeIndexM v (o+2)
+       y2 <- G.basicUnsafeIndexM v (o+2)
+       return (BBox (x1, y1) (x2, y2))
 -------------------------------------------------------------------------------------------
 polygonFromBounds :: HasBounds bounded => bounded -> Polygon
 polygonFromBounds bounded = Polygon [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
@@ -213,7 +271,7 @@ edgeTraversalsCount testPoint edges
         (\edge ->
            case calculateSegmentsIntersection testRay edge of
              RealIntersection _ -> True
-             _other                -> False)
+             _other             -> False)
         edges'
 
 -------------------------------------------------------------------------------------------
@@ -266,26 +324,34 @@ areBBoxesOverlapping a b = check (bounds a) (bounds b)
 
 {-# INLINE areBBoxesOverlapping #-}
 -------------------------------------------------------------------------------------------
-bboxesOverlaping :: (HasBounds a, HasBounds b) => a -> b -> BBoxesOverlaping
-bboxesOverlaping a b = go sizesA sizesB unionSizes
-  where
-    bboxA = bounds a
-    bboxB = bounds b
-    sizesA = bboxSizes bboxA
-    sizesB = bboxSizes bboxB
-    unionSizes = bboxSizes $ bboxA <> bboxB
-    go (Sizes2D widthA heightA) (Sizes2D widthB heightB) (Sizes2D widthU heightU)
-     | (widthSum < 0) || (heightSum < 0) = BBoxesAreNotOverlap $ Sizes2D (abs widthSum) (abs heightSum)
-     | widthSum == 0 = BBoxesAreTouchVertical heightSum
-     | heightSum == 0 = BBoxesAreTouchHorizontal widthSum
-     | otherwise = BBoxesAreOverlap $ Sizes2D widthSum heightSum
-     where
-      widthSum = widthA + widthB - widthU
-      heightSum = heightA + heightB - heightU
+bboxesOverlaping :: Box -> Box -> BBoxesOverlaping
+bboxesOverlaping bboxA bboxB = 
+    let 
+     (widthA, heightA) = bboxSizes bboxA
+     (widthB, heightB) = bboxSizes bboxB
+     union = bboxUnion bboxA bboxB
+     (widthU, heightU) = bboxSizes union
+     widthSum = widthA + widthB - widthU
+     heightSum = heightA + heightB - heightU
+     in
+        if (widthSum < 0) || (heightSum < 0) then BBoxesAreNotOverlap (abs widthSum, abs heightSum)
+        else if widthSum == 0 then BBoxesAreTouchVertical heightSum
+        else if heightSum == 0 then BBoxesAreTouchHorizontal widthSum
+        else BBoxesAreOverlap (widthSum, heightSum)  
 
+{-# INLINE bboxesOverlaping #-}
 -------------------------------------------------------------------------------------------
-bboxSizes :: BBox -> Sizes2D
-bboxSizes (BBox (x1, y1) (x2, y2)) = Sizes2D (abs (x2 - x1)) (abs (y2 - y1))
+bboxUnion :: Box -> Box -> Box
+bboxUnion ((xMin1, yMin1), (xMax1, yMax1)) ((xMin2, yMin2), (xMax2, yMax2)) =
+  (
+    ((min xMin1 xMin2), (min yMin1 yMin2)),
+    ((max xMax1 xMax2), (max yMax1 yMax2))
+  )
+
+{-# INLINE bboxUnion #-}
+-------------------------------------------------------------------------------------------
+bboxSizes :: Box -> Sizes2D
+bboxSizes ((x1, y1), (x2, y2)) = (abs (x2 - x1), abs (y2 - y1))
 
 {-# INLINE bboxSizes #-}
 -------------------------------------------------------------------------------------------
@@ -301,7 +367,8 @@ perpendicularLineThrough :: Point -> Segment -> Segment
 perpendicularLineThrough point segment@(Segment start@(startX, startY) _) =
   centerSegment segment'
   where
-    Segment start0 (endX0, endY0) = transform (translate (-startX, -startY)) segment
+    Segment start0 (endX0, endY0) =
+      transform (translate (-startX, -startY)) segment
     rotatedEnd = ((-endY0), endX0)
     rotated = Segment start0 rotatedEnd
     segment' = transform (translate point) rotated

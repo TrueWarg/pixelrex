@@ -19,9 +19,10 @@ import qualified Pixelrex                        as R
 import           System.Random.MWC
 import qualified System.Random.MWC               as MWC
 import           System.Random.MWC.Distributions
-import     qualified      Data.Text                       as T
+import qualified Data.Text                       as T
 import           Data.Maybe
 import           Debug.Trace              (trace)
+import           Data.Time.Clock.POSIX
 
 slicSample :: IO ()
 slicSample = do
@@ -150,50 +151,33 @@ bsdRoomSample = do
 markovRoomsSample :: IO ()
 markovRoomsSample = do
   gen <- createSystemRandom
-  rooms <- generateRooms gen 30 250
+  rooms5 <- generateRooms gen 5 250
+  start <- timeMillis
+  putStrLn $ "Start " ++ show start
+  rooms <- generateRooms gen 60 250
+  end <- timeMillis
+  putStrLn $ show (end - start)
+  putStrLn $ show rooms5
   putStrLn (show $ R.size rooms)
-  let
-    shiftX = 600
-    shiftY = 250
-  Blank.blankCanvas 3000 $ \context -> do
-    Blank.send context $ do
-      forM (zip [0..] (R.toList rooms)) $ \(idx, (BBox (x1, y1) (x2, y2))) -> do
-        Blank.beginPath()
-        Blank.moveTo(x1 + shiftX, y1 + shiftY)
-        Blank.lineTo(x1 + shiftX, y2 + shiftY)
-        Blank.lineTo(x2 + shiftX, y2 + shiftY)
-        Blank.lineTo(x2 + shiftX, y1 + shiftY)
-        Blank.closePath()
-        Blank.fillStyle (color idx)
-        Blank.lineWidth 1
-        Blank.fill()
-    return ()
+  -- let
+  --   shiftX = 600
+  --   shiftY = 250
+  -- Blank.blankCanvas 3000 $ \context -> do
+  --   Blank.send context $ do
+  --     forM (zip [0..] (R.toList rooms)) $ \(idx, (BBox (x1, y1) (x2, y2))) -> do
+  --       Blank.beginPath()
+  --       Blank.moveTo(x1 + shiftX, y1 + shiftY)
+  --       Blank.lineTo(x1 + shiftX, y2 + shiftY)
+  --       Blank.lineTo(x2 + shiftX, y2 + shiftY)
+  --       Blank.lineTo(x2 + shiftX, y1 + shiftY)
+  --       Blank.closePath()
+  --       Blank.fillStyle (color idx)
+  --       Blank.lineWidth 1
+  --       Blank.fill()
+  --   return ()
 
-generateRooms' gen n temperature = do
-  initialRooms <- initialState gen n
-  let
-    shiftX = 600
-    shiftY = 250
-    go rooms !t = do
-      newRooms <- updateRooms gen rooms t
-      Blank.blankCanvas 3000 $ \context -> do
-        Blank.send context $ do
-          forM (zip [0..] (R.toList rooms)) $ \(idx, (BBox (x1, y1) (x2, y2))) -> do
-           Blank.beginPath()
-           Blank.moveTo(x1 + shiftX, y1 + shiftY)
-           Blank.lineTo(x1 + shiftX, y2 + shiftY)
-           Blank.lineTo(x2 + shiftX, y2 + shiftY)
-           Blank.lineTo(x2 + shiftX, y1 + shiftY)
-           Blank.closePath()
-           Blank.fillStyle (color idx)
-           Blank.lineWidth 1
-           Blank.fill()
-        return ()
-      if (t > 0.1) then
-        go newRooms (t * 0.99)
-      else return rooms
-  go initialRooms temperature
-  return ()
+timeMillis :: Integral b => IO b
+timeMillis = getCurrentTime >>= pure . (1000*) . utcTimeToPOSIXSeconds >>= pure . round
 
 color :: Int -> T.Text
 color idx = colors !! (idx `mod` 6)

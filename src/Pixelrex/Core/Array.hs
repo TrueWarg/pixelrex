@@ -11,9 +11,9 @@ module Pixelrex.Core.Array
   ) where
 
 import           Control.Monad.ST        (ST, runST)
+import           Data.Hashable
 import           Data.HashTable.Class    as H
 import           Data.HashTable.ST.Basic as BH
-import           Data.Hashable
 import           Data.Massiv.Array
 import           Data.Massiv.Array       as A
 import           Data.Massiv.Array.IO    hiding (Image)

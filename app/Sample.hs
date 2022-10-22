@@ -151,30 +151,31 @@ bsdRoomSample = do
 markovRoomsSample :: IO ()
 markovRoomsSample = do
   gen <- createSystemRandom
-  rooms5 <- generateRooms gen 5 250
   start <- timeMillis
   putStrLn $ "Start " ++ show start
-  rooms <- generateRooms gen 60 250
+  let
+    moves = [ translate (0, 0), translate (48, 0), translate (-48, 0), translate (0, 48), translate (0, -48)]
+    weights = OverlappingWeights 1 0.01 (-0.005) (-0.05)   
+    params = GenRoomsParams (30, 30) 60 moves weights 250 0.1 0.99   
+  rooms <- generateRooms gen params
   end <- timeMillis
   putStrLn $ show (end - start)
-  putStrLn $ show rooms5
-  putStrLn (show $ R.size rooms)
-  -- let
-  --   shiftX = 600
-  --   shiftY = 250
-  -- Blank.blankCanvas 3000 $ \context -> do
-  --   Blank.send context $ do
-  --     forM (zip [0..] (R.toList rooms)) $ \(idx, (BBox (x1, y1) (x2, y2))) -> do
-  --       Blank.beginPath()
-  --       Blank.moveTo(x1 + shiftX, y1 + shiftY)
-  --       Blank.lineTo(x1 + shiftX, y2 + shiftY)
-  --       Blank.lineTo(x2 + shiftX, y2 + shiftY)
-  --       Blank.lineTo(x2 + shiftX, y1 + shiftY)
-  --       Blank.closePath()
-  --       Blank.fillStyle (color idx)
-  --       Blank.lineWidth 1
-  --       Blank.fill()
-  --   return ()
+  let
+    shiftX = 600
+    shiftY = 250
+  Blank.blankCanvas 3000 $ \context -> do
+    Blank.send context $ do
+      forM (zip [0..] (R.toList rooms)) $ \(idx, (BBox (x1, y1) (x2, y2))) -> do
+        Blank.beginPath()
+        Blank.moveTo(x1 + shiftX, y1 + shiftY)
+        Blank.lineTo(x1 + shiftX, y2 + shiftY)
+        Blank.lineTo(x2 + shiftX, y2 + shiftY)
+        Blank.lineTo(x2 + shiftX, y1 + shiftY)
+        Blank.closePath()
+        Blank.fillStyle (color idx)
+        Blank.lineWidth 1
+        Blank.fill()
+    return ()
 
 timeMillis :: Integral b => IO b
 timeMillis = getCurrentTime >>= pure . (1000*) . utcTimeToPOSIXSeconds >>= pure . round

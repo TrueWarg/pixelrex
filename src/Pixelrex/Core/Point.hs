@@ -9,7 +9,6 @@ module Pixelrex.Core.Point
   ) where
 
 import           Pixelrex.Core.Algebra
-import           Pixelrex.Core.Distance
 
 -------------------------------------------------------------------------------------------
 type Point3D a = (a, a, a)

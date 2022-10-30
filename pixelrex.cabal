@@ -29,7 +29,7 @@ library
       Pixelrex.Core.Algebra
       Pixelrex.Core.Array
       Pixelrex.Core.Point
-      Pixelrex.Core.Distance
+      Pixelrex.Core.Metric
       Pixelrex.Core.DCEL
       Pixelrex.Core.FunctorMeta
       Pixelrex.Geometry.Core

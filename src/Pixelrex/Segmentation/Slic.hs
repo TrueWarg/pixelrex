@@ -19,12 +19,12 @@ import           Data.Int                 (Int8)
 import           Data.STRef
 import           Debug.Trace              (trace)
 
-import           Pixelrex.Core.Array           (Ix2 (..), Matrix, Sz (..), loopM_,
+import           Pixelrex.Core.Array      (Ix2 (..), Matrix, Sz (..), loopM_,
                                            (!), (!>))
 
 import           Data.Hashable
-import qualified Pixelrex.Core.Array           as A
-import           Pixelrex.Core.Distance
+import qualified Pixelrex.Core.Array      as A
+import           Pixelrex.Core.Metric     (L2(..))
 import           Pixelrex.Core.Point
 
 -------------------------------------------------------------------------------------------
@@ -47,13 +47,13 @@ type Clusters a = A.Array A.U A.Ix1 (SuperPixel a)
 type ClustersMask a = A.Array A.U A.Ix2 (SuperPixel a)
 
 -------------------------------------------------------------------------------------------
-instance Euclidean (Point2D Int) where
-  distance (x1, y1) (x2, y2) = result
+instance L2 (Point2D Int) where
+  l2Distance (x1, y1) (x2, y2) = result
     where
       result = sqrt $ fromIntegral $ ((x2 - x1) ^ 2) + ((y2 - y1) ^ 2)
 
-instance Euclidean (Point3D Float) where
-  distance (x1, y1, z1) (x2, y2, z2) = result
+instance L2 (Point3D Float) where
+  l2Distance (x1, y1, z1) (x2, y2, z2) = result
     where
       result = sqrt $ ((x2 - x1) ^ 2) + ((y2 - y1) ^ 2) + ((z2 - z1) ^ 2)
 
@@ -107,7 +107,7 @@ keepSpreadIn !mask !stride =
 -------------------------------------------------------------------------------------------
 -- | Find coordinate of min image gradient in square 3x3 with defined center
 coordinateOfMinGrad ::
-     (A.Unbox a, Euclidean (Point3D a)) => Image a -> Coord2D -> Coord2D
+     (A.Unbox a, L2 (Point3D a)) => Image a -> Coord2D -> Coord2D
 coordinateOfMinGrad !image !center = runST $ localMinByGrad' image center
   where
     localMinByGrad' !image !(y, x) = do
@@ -121,8 +121,8 @@ coordinateOfMinGrad !image !center = runST $ localMinByGrad' image center
                     right = image !> i ! (min (w - 1) (j + 1))
                     top = image !> (min (h - 1) (i + 1)) ! j
                     bottom = image !> (max 0 (i - 1)) ! j
-                    gx = distance left right
-                    gy = distance top bottom
+                    gx = l2Distance left right
+                    gy = l2Distance top bottom
                     gradient = (gx ^ 2) + (gy ^ 2)
                 min <- readSTRef minRef
                 if (gradient < min)
@@ -134,8 +134,7 @@ coordinateOfMinGrad !image !center = runST $ localMinByGrad' image center
 -------------------------------------------------------------------------------------------
 -- | Generate initial centers, which will be represented
 -- by a non-uniform grid corrected with 'coordinateOfMinGrad'
-initialCenters ::
-     (A.Unbox a, Euclidean (Point3D a)) => Int -> Image a -> Clusters a
+initialCenters :: (A.Unbox a, L2 (Point3D a)) => Int -> Image a -> Clusters a
 initialCenters !step !image = centers
   where
     Sz (h :. w) = A.size image
@@ -158,7 +157,7 @@ initialCenters !step !image = centers
 -- | In defined neighborhood for each pixel find slic disntance beetween the nearest
 -- by coordinate clusters and assign cluster with minimu distance for this pixel
 assignClusters ::
-     (A.Unbox a, Euclidean (Point3D a))
+     (A.Unbox a, L2 (Point3D a))
   => Int
   -> Image a
   -> Clusters a
@@ -242,10 +241,9 @@ recalculateClusterCenters !old !mask = runST result
 
 -------------------------------------------------------------------------------------------
 -- | SLICDistance = ColorDistance + Weight * SpaceDistance
-slicDistance ::
-     Euclidean (Point3D a) => Float -> SuperPixel a -> SuperPixel a -> Float
+slicDistance :: L2 (Point3D a) => Float -> SuperPixel a -> SuperPixel a -> Float
 slicDistance weight (pixel1, coord1) (pixel2, coord2) =
   colorDistance + weight * spaceDistance
   where
-    colorDistance = distance pixel1 pixel2
-    spaceDistance = distance coord1 coord2
+    colorDistance = l2Distance pixel1 pixel2
+    spaceDistance = l2Distance coord1 coord2

@@ -23,3 +23,23 @@ instance (VectorSpace a, VectorSpace b, VectorSpace c) =>
 instance VectorSpace Double where
   a /+/ b = a + b
   a */ b = a * b
+
+-------------------------------------------------------------------------------------------
+circleIn :: (Ord a, Num a) => a -> a -> a -> a
+circleIn value start end = value''
+  where
+    value' =
+      if (value < start)
+        then end + value
+        else value
+    value'' =
+      if (value' >= end)
+        then value' - end
+        else value'
+
+{-# INLINE circleIn #-}
+-------------------------------------------------------------------------------------------
+circle0 :: (Ord a, Num a) => a -> a -> a
+circle0 value end = circleIn value 0 end
+
+{-# INLINE circle0 #-}

@@ -15,6 +15,8 @@ module Pixelrex.Core.Array
   , maxBy
   , indexOfMaxBy
   , pickValues
+  , patch
+  , patchOfMutable
   ) where
 
 import           Control.Monad.ST        (ST, runST)
@@ -26,6 +28,7 @@ import           Data.Massiv.Array       as A
 import           Data.Massiv.Array.IO    hiding (Image)
 import           Data.Maybe              (fromJust)
 import           Data.STRef
+import           Pixelrex.Core.Algebra   (circle0)
 import           Pixelrex.Core.Point     (Point2D)
 
 -------------------------------------------------------------------------------------------
@@ -72,10 +75,14 @@ frameOfMutable ::
   -> Ix2
   -> Ix2
   -> m (Vector r a)
-frameOfMutable matrix (y1 :. x1) (y2 :. x2) = do
+frameOfMutable matrix (y1' :. x1') (y2' :. x2') = do
   collected <- frameOfMutable' (y1 + 1) x1 A.empty
   return $ A.computeAs (undefined :: r) collected
   where
+    y1 = max y1' 0
+    x1 = max x1' 0
+    y2 = min y2' (h - 1)
+    x2 = min x2' (w - 1)
     Sz (h :. w) = A.sizeOfMArray matrix
     frameOfMutable' i j frame
       | j < x1 = return frame
@@ -99,10 +106,12 @@ submatrixOfMutable ::
   -> Ix2
   -> m (Matrix r a)
 submatrixOfMutable matrix (y1 :. x1) (y2 :. x2) =
-  A.makeArrayA size $ \(i :. j) -> A.readM matrix (y1 + i :. x1 + j)
+  A.makeArrayA size $ \(i :. j) -> A.readM matrix (startY + i :. startX + j)
   where
     Sz (h :. w) = A.sizeOfMArray matrix
-    size = Sz $ ((min y2 h) - (max y1 w)) :. ((min x2 w) - (max x1 0))
+    startY = max y1 0
+    startX = max x1 0
+    size = Sz $ ((min (y2 + 1) h) - startY) :. ((min (x2 + 1) w) - startX)
 
 -------------------------------------------------------------------------------------------
 submatrix ::
@@ -112,10 +121,12 @@ submatrix ::
   -> Ix2
   -> Matrix r a
 submatrix matrix (y1 :. x1) (y2 :. x2) =
-  A.makeArray A.Par size $ \(i :. j) -> matrix !> (y1 + i) ! (x1 + j)
+  A.makeArray A.Par size $ \(i :. j) -> matrix !> (startY + i) ! (startX + j)
   where
     Sz (h :. w) = A.size matrix
-    size = Sz $ ((min y2 h) - (max y1 w)) :. ((min x2 w) - (max x1 0))
+    startY = max y1 0
+    startX = max x1 0
+    size = Sz $ ((min (y2 + 1) h) - startY) :. ((min (x2 + 1) w) - startX)
 
 -------------------------------------------------------------------------------------------
 maxBy ::
@@ -135,18 +146,18 @@ indexOfMaxBy ::
   -> Int
 indexOfMaxBy criterion vector
   | A.isEmpty vector = error "vector is empty"
-  | otherwise = maxBy' (vector ! 0) 1
+  | otherwise = indexOfMaxBy' (vector ! 0) 0 1
   where
     Sz size = A.size vector
-    maxBy' max idx
-      | idx == size = idx - 1
+    indexOfMaxBy' max idxMax idx
+      | idx == size = idxMax
       | otherwise =
         let value = vector ! idx
-            max' =
+            (max', idxMax') =
               if criterion value > criterion max
-                then value
-                else max'
-         in maxBy' max' (idx + 1)
+                then (value, idx)
+                else (max, idxMax)
+         in indexOfMaxBy' max' idxMax' (idx + 1)
 
 -------------------------------------------------------------------------------------------
 pickValues ::
@@ -158,3 +169,35 @@ pickValues matrix indices =
   A.makeArray A.Par (A.size indices) $ \(i :. j) ->
     let idx = indices !> i ! j
      in A.index matrix idx
+
+-------------------------------------------------------------------------------------------
+patchOfMutable ::
+     forall m r a. (PrimMonad m, MonadThrow m, Manifest r a)
+  => MMatrix (PrimState m) r a
+  -> Ix2
+  -> Ix2
+  -> m (Matrix r a)
+patchOfMutable matrix (y1 :. x1) (y2 :. x2) =
+  A.makeArrayA size $ \(i :. j) -> do
+    let i' = circle0 i h
+        j' = circle0 j w
+    A.readM matrix (i' :. j')
+  where
+    Sz (h :. w) = A.sizeOfMArray matrix
+    size = Sz $ (y2 - y1) :. (x2 - x1)
+
+-------------------------------------------------------------------------------------------
+patch ::
+     forall r a. (Manifest r a, Load r Ix2 a)
+  => Matrix r a
+  -> Ix2
+  -> Ix2
+  -> Matrix r a
+patch matrix (y1 :. x1) (y2 :. x2) =
+  A.makeArray A.Par size $ \(i :. j) ->
+    let i' = circle0 i h
+        j' = circle0 j w
+     in matrix !> i' ! j'
+  where
+    Sz (h :. w) = A.size matrix
+    size = Sz $ (y2 - y1) :. (x2 - x1)

@@ -43,3 +43,9 @@ circle0 :: (Ord a, Num a) => a -> a -> a
 circle0 value end = circleIn value 0 end
 
 {-# INLINE circle0 #-}
+
+-------------------------------------------------------------------------------------------
+clip :: (Ord a, Num a) => a -> a -> a -> a
+clip value start end = min (max value start) end
+
+{-# INLINE clip #-}

@@ -102,8 +102,10 @@ stochasticNeighbors gen neighborhood sample = stochasticNeighbors' 0 []
     stochasticNeighbors' idx neighbors
       | idx == neighborhood = return $ A.sfromList neighbors
       | otherwise = do
-        i <- MWC.uniformR (0, h - 1) gen
-        j <- MWC.uniformR (0, w - 1) gen
+        c <- MWC.uniformR (0, h * w) gen
+        let
+          i = c `div` h
+          j = c `mod` w
         stochasticNeighbors' (idx + 1) ((i :. j) : neighbors)
 
 collectExistedNeighbors ::

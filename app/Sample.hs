@@ -217,19 +217,19 @@ getHalls tree = halls' [] [tree]
 harrisonSample :: IO ()
 harrisonSample = do
   image <-
-    (A.readImageAuto "C:\\Users\\irrmm\\Desktop\\ssample.png") :: IO (A.Image S (SRGB 'NonLinear) Word8)
-  gen <- MWC.initialize ((VG.singleton 42) :: V.Vector Word32)
-  -- gen <- createSystemRandom
+    (A.readImageAuto "sample.png") :: IO (A.Image S (SRGB 'NonLinear) Word8)
+  -- gen <- MWC.initialize ((VG.singleton 42) :: V.Vector Word32)
+  gen <- createSystemRandom
   start <- timeMillis
   let params =
         GenTextureParams
-          { _outputWidth = 60
-          , _outputHeight = 60
+          { _outputWidth = 50
+          , _outputHeight = 50
           , _epochs = 4
           , _neighborhood = 4
           , _additionalRandomNeighbor = 10
           }
-      resultPath = "C:\\Users\\irrmm\\Desktop\\result.png"
+      resultPath = "result.png"
   putStrLn "start"
   result <- reSynthesis gen params (convertToRexFormat' image)
   end <- timeMillis

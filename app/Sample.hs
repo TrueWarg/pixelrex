@@ -223,8 +223,8 @@ harrisonSample = do
   start <- timeMillis
   let params =
         GenTextureParams
-          { _outputWidth = 50
-          , _outputHeight = 50
+          { _outputWidth = 128
+          , _outputHeight = 128
           , _epochs = 4
           , _neighborhood = 4
           , _additionalRandomNeighbor = 10

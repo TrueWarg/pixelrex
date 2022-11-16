@@ -1,9 +1,15 @@
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE Strict              #-}
+-- Simplified implementation of http://wscg.zcu.cz/wscg2001/Papers_2001/R285.pdf
+-- A NON-HIERARCHICAL PROCEDURE FOR RE-SYNTHESIS OF COMPLEX TEXTURES, Paul Harrison (2001)
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE Strict           #-}
 
-module Pixelrex.Gen.Harrison where
+-------------------------------------------------------------------------------------------
+module Pixelrex.Gen.Harrison
+  ( GenTextureParams(..)
+  , reSynthesis
+  ) where
 
+-------------------------------------------------------------------------------------------
 import           Control.Monad.Primitive
 import           Control.Monad.ST                (ST, runST)
 import           Data.Maybe                      (fromJust)
@@ -26,24 +32,26 @@ import           System.Random.MWC
 import           System.Random.MWC.Distributions
 import           System.Random.Stateful
 
+-------------------------------------------------------------------------------------------
 data GenTextureParams =
   GenTextureParams
-    { _outputWidth              :: Int
-    , _outputHeight             :: Int
-    , _epochs                   :: Int
-    , _neighborhood             :: Int
-    , _additionalRandomNeighbor :: Int
+    { _outputWidth               :: Int
+    , _outputHeight              :: Int
+    , _epochs                    :: Int -- ^ number of procedure iteration
+    , _neighborhood              :: Int -- ^ neighborhood for patches in origin image and output
+    , _additionalRandomNeighbors :: Int -- ^ count of pixels which will be chosen randomly
     }
 
 type Image = Matrix A.U (Point3D Float)
 
+-------------------------------------------------------------------------------------------
 reSynthesis ::
      (PrimMonad m, MonadThrow m)
   => Gen (PrimState m)
   -> GenTextureParams
   -> Image
   -> m Image
-reSynthesis gen (GenTextureParams w h epochs neighborhood additionalRandomNeighbor) sample = do
+reSynthesis gen (GenTextureParams w h epochs neighborhood additionalRandomNeighbors) sample = do
   indices <- shaffledIndices gen w h
   pickedLocs <- reSynthesis' gen indices 0 initialLocs
   return $ pickPixels sample pickedLocs
@@ -57,11 +65,12 @@ reSynthesis gen (GenTextureParams w h epochs neighborhood additionalRandomNeighb
             gen
             locs
             neighborhood
-            additionalRandomNeighbor
+            additionalRandomNeighbors
             sample
             indices
         reSynthesis' gen indices (epoch + 1) updated
 
+-------------------------------------------------------------------------------------------
 pickPixels :: Image -> Matrix A.U Ix2 -> Image
 pickPixels sample locs =
   A.makeArrayR
@@ -71,8 +80,9 @@ pickPixels sample locs =
     (\(i :. j) ->
        let (i' :. j') = locs !> i ! j
         in sample !> i' ! j')
-{-# INLINE pickPixels #-}
 
+{-# INLINE pickPixels #-}
+-------------------------------------------------------------------------------------------
 reSynthesisStep ::
      (PrimMonad m, MonadThrow m)
   => Gen (PrimState m)
@@ -82,25 +92,28 @@ reSynthesisStep ::
   -> Image
   -> Vector A.U Ix2
   -> m (Matrix A.U Ix2)
-reSynthesisStep gen pickedLocs' neighborhood additionalRandomNeighbor sample indices = do
+reSynthesisStep gen pickedLocs' neighborhood additionalRandomNeighbors sample indices = do
   let Sz n = A.size indices
   pickedLocs <- A.thawS pickedLocs'
-  loopM_ 0 (< n) (+ 1) $ \i -> do
+  loopM_ 0 (< n) (+ 1) $ \i
     -- it works slow if array too long bacause of copying.
     -- I tried to use mutable version, but probably A.readM for matrix has worse performace than pure analog
     -- of slicing. This is not so critical for such algorytm because it works very slow by design if
     -- image larger than 128x128
     -- todo: try optimaze mutable version (bench linear vector, ask massiv repo maintainer)
+   -> do
     frozen <- A.freezeS pickedLocs
+    -- todo move maxNeighbors in params
     let maxNeighbors = min 8 i
         idx@(i' :. j') = indices ! i
         neighbors' = collectExistedNeighbors frozen sample maxNeighbors idx
-    neighbors'' <- stochasticNeighbors gen additionalRandomNeighbor sample
+    neighbors'' <- stochasticNeighbors gen additionalRandomNeighbors sample
     let neighbors = A.computeAs A.U $ neighbors' `A.sappend` neighbors''
         neighbor = pickNeighbor frozen idx neighbors sample neighborhood
     A.write pickedLocs (i' :. j') neighbor
   A.freezeS pickedLocs
 
+-------------------------------------------------------------------------------------------
 stochasticNeighbors ::
      (PrimMonad m) => Gen (PrimState m) -> Int -> Image -> m (Vector A.DS Ix2)
 stochasticNeighbors gen neighborhood sample = stochasticNeighbors' 0 []
@@ -114,6 +127,7 @@ stochasticNeighbors gen neighborhood sample = stochasticNeighbors' 0 []
             j = c `mod` w
         stochasticNeighbors' (idx + 1) ((i :. j) : neighbors)
 
+-------------------------------------------------------------------------------------------
 collectExistedNeighbors ::
      Matrix A.U Ix2 -> Image -> Int -> Ix2 -> Vector A.DS Ix2
 collectExistedNeighbors pickedLocs sample maxNeighbors center@(ci :. cj) =
@@ -137,6 +151,7 @@ collectExistedNeighbors pickedLocs sample maxNeighbors center@(ci :. cj) =
             new = neighbors `A.sappend` found
          in collectExistedNeighbors' (collected + sz) (radius + 1) new
 
+-------------------------------------------------------------------------------------------
 collectFromFrame ::
      Matrix A.U Ix2 -> Image -> Ix2 -> Ix2 -> Ix2 -> Vector A.U Ix2
 collectFromFrame matrix sample (ci :. cj) (y1 :. x1) (y2 :. x2) =
@@ -171,6 +186,7 @@ collectFromFrame matrix sample (ci :. cj) (y1 :. x1) (y2 :. x2) =
                     nj' = circle0 nj sw
                  in collectFromFrame' nextI nextJ ((ni' :. nj') `cons` frame)
 
+-------------------------------------------------------------------------------------------
 pickNeighbor :: Matrix A.U Ix2 -> Ix2 -> Vector A.U Ix2 -> Image -> Int -> Ix2
 pickNeighbor pickedLocs center neighbors sample neighborhood = neighbors ! idx
   where
@@ -190,6 +206,7 @@ pickNeighbor pickedLocs center neighbors sample neighborhood = neighbors ! idx
             in ((neighbors ! i), distance))
     idx = indexOfMaxBy (\(_, d) -> d) distances
 
+-------------------------------------------------------------------------------------------
 distanceForPatches :: Matrix A.U Ix2 -> Ix2 -> Ix2 -> Image -> Int -> Float
 distanceForPatches pickedLocs (ci :. cj) (ni :. nj) sample neighborhood =
   distanceForPatches' (-neighborhood) (-neighborhood) 1E-6
@@ -211,6 +228,7 @@ distanceForPatches pickedLocs (ci :. cj) (ni :. nj) sample neighborhood =
                 else colorSpaceDistance (sample !> ni' ! nj') (sample !> i ! j)
          in distanceForPatches' di (dj + 1) (sum + dSum)
 
+-------------------------------------------------------------------------------------------
 shaffledIndices ::
      (PrimMonad m) => Gen (PrimState m) -> Int -> Int -> m (Vector A.U Ix2)
 shaffledIndices gen w h = do
@@ -224,6 +242,7 @@ shaffledIndices gen w h = do
     A.write_ indices r (i :. j)
   A.freezeS indices
 
+-------------------------------------------------------------------------------------------
 colorSpaceDistance :: Point3D Float -> Point3D Float -> Float
 colorSpaceDistance (r1, g1, b1) (r2, g2, b2) = (-1) * (log $ r * g * b)
   where

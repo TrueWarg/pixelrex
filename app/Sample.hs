@@ -227,7 +227,7 @@ harrisonSample = do
           , _outputHeight = 128
           , _epochs = 4
           , _neighborhood = 4
-          , _additionalRandomNeighbor = 10
+          , _additionalRandomNeighbors = 10
           }
       resultPath = "result.png"
   putStrLn "start"
@@ -258,11 +258,6 @@ convertToSRGB image =
     (\(i :. j) ->
        let (r, g, b) = image !> i ! j
         in (Pixel (ColorSRGB (round r) (round g) (round b))))
-
-indices = do
-  gen <- createSystemRandom
-  indices <- shaffledIndices gen 5 5
-  putStrLn $ show indices
 
 submatrix' = do
   let matrix = R.makeArrayR R.U R.Par (R.Sz (5 :. 5)) (\(i :. j) -> i :. j)
